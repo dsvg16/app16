@@ -402,6 +402,7 @@ This endpoint reads information contain in a pdf document's watermark with the p
 **Specification**
  * Only the owner of a document should be able to create watermarked versions of their documents
  * The document owner MUST be able to list all versions of their documents and their intended recipients
+ * The payload is a gpg encrypted JSON presented as ASCII armored base64, without any GPG headers.
 
  ## rmap-initiate
  
@@ -448,6 +449,7 @@ should decrypt to:
 **Specification**
  * The server SHOULD only respond to known identities.
  * All submitted group public keys MUST constitute valid identities.
+ * The payload is a gpg encrypted JSON presented as ASCII armored base64, without any GPG headers.
  
   ## rmap-get-link
  
