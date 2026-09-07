@@ -86,7 +86,7 @@ def create_app():
         return h.hexdigest()
 
     # --- Routes ---
-    
+
     @app.route("/<path:filename>")
     def static_files(filename):
         return app.send_static_file(filename)
@@ -94,7 +94,7 @@ def create_app():
     @app.route("/")
     def home():
         return app.send_static_file("index.html")
-    
+
     @app.get("/healthz")
     def healthz():
         try:
@@ -259,7 +259,7 @@ def create_app():
                 document_id = int(document_id)
             except (TypeError, ValueError):
                 return jsonify({"error": "document id required"}), 400
-        
+
         try:
             with get_engine().connect() as conn:
                 rows = conn.execute(
@@ -284,8 +284,8 @@ def create_app():
             "method": r.method,
         } for r in rows]
         return jsonify({"versions": versions}), 200
-    
-    
+
+
     # GET /api/list-all-versions
     @app.get("/api/list-all-versions")
     @require_auth
@@ -313,13 +313,13 @@ def create_app():
             "method": r.method,
         } for r in rows]
         return jsonify({"versions": versions}), 200
-    
+
     # GET /api/get-document or /api/get-document/<id>  → returns the PDF (inline)
     @app.get("/api/get-document")
     @app.get("/api/get-document/<int:document_id>")
     @require_auth
     def get_document(document_id: int | None = None):
-    
+
         # Support both path param and ?id=/ ?documentid=
         if document_id is None:
             document_id = request.args.get("id") or request.args.get("documentid")
@@ -327,7 +327,7 @@ def create_app():
                 document_id = int(document_id)
             except (TypeError, ValueError):
                 return jsonify({"error": "document id required"}), 400
-        
+
         try:
             with get_engine().connect() as conn:
                 row = conn.execute(
@@ -374,11 +374,11 @@ def create_app():
 
         resp.headers["Cache-Control"] = "private, max-age=0, must-revalidate"
         return resp
-    
+
     # GET /api/get-version/<link>  → returns the watermarked PDF (inline)
     @app.get("/api/get-version/<link>")
     def get_version(link: str):
-        
+
         try:
             with get_engine().connect() as conn:
                 row = conn.execute(
@@ -422,7 +422,7 @@ def create_app():
 
         resp.headers["Cache-Control"] = "private, max-age=0"
         return resp
-    
+
     # Helper: resolve path safely under STORAGE_DIR (handles absolute/relative)
     def _safe_resolve_under_storage(p: str, storage_root: Path) -> Path:
         storage_root = storage_root.resolve()
@@ -507,8 +507,8 @@ def create_app():
             "file_missing": file_missing,
             "note": delete_error,   # null/omitted if everything was fine
         }), 200
-        
-        
+
+
     # POST /api/create-watermark or /api/create-watermark/<id>  → create watermarked pdf and returns metadata
     @app.post("/api/create-watermark")
     @app.post("/api/create-watermark/<int:document_id>")
@@ -525,7 +525,7 @@ def create_app():
             doc_id = document_id
         except (TypeError, ValueError):
             return jsonify({"error": "document id required"}), 400
-            
+
         payload = request.get_json(silent=True) or {}
         # allow a couple of aliases for convenience
         method = payload.get("method")
@@ -654,8 +654,8 @@ def create_app():
             "filename": candidate,
             "size": len(wm_bytes),
         }), 201
-        
-        
+
+
     @app.post("/api/load-plugin")
     @require_auth
     def load_plugin():
@@ -709,10 +709,10 @@ def create_app():
             is_ok = has_api
         if not is_ok:
             return jsonify({"error": "plugin does not implement WatermarkingMethod API (add_watermark/read_secret)"}), 400
-            
+
         # Register the class (not an instance) so you can instantiate as needed later
         WMUtils.METHODS[method_name] = cls()
-        
+
         return jsonify({
             "loaded": True,
             "filename": filename,
@@ -720,9 +720,9 @@ def create_app():
             "class_qualname": f"{getattr(cls, '__module__', '?')}.{getattr(cls, '__qualname__', cls.__name__)}",
             "methods_count": len(WMUtils.METHODS)
         }), 201
-        
-    
-    
+
+
+
     # GET /api/get-watermarking-methods -> {"methods":[{"name":..., "description":...}, ...], "count":N}
     @app.get("/api/get-watermarking-methods")
     def get_watermarking_methods():
@@ -730,9 +730,9 @@ def create_app():
 
         for m in WMUtils.METHODS:
             methods.append({"name": m, "description": WMUtils.get_method(m).get_usage()})
-            
+
         return jsonify({"methods": methods, "count": len(methods)}), 200
-        
+
     # POST /api/read-watermark
     @app.post("/api/read-watermark")
     @app.post("/api/read-watermark/<int:document_id>")
@@ -749,7 +749,7 @@ def create_app():
             doc_id = document_id
         except (TypeError, ValueError):
             return jsonify({"error": "document id required"}), 400
-            
+
         payload = request.get_json(silent=True) or {}
         # allow a couple of aliases for convenience
         method = payload.get("method")
@@ -793,7 +793,7 @@ def create_app():
             return jsonify({"error": "document path invalid"}), 500
         if not file_path.exists():
             return jsonify({"error": "file missing on disk"}), 410
-        
+
         secret = None
         try:
             secret = WMUtils.read_watermark(
@@ -811,12 +811,11 @@ def create_app():
         }), 201
 
     return app
-    
+
 
 # WSGI entrypoint
 app = create_app()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
-
