@@ -22,8 +22,7 @@ COPY flag /app/flag
 COPY entrypoint.sh /app/entrypoint.sh
 RUN pip install --no-cache-dir -e .
 
-EXPOSE 5000
+EXPOSE 8000
 
 # Default command runs the web server
 CMD ["./entrypoint.sh"]
-
