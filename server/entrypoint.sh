@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 if [[ -z "${FLAG_2:-}" ]]; then
-  echo "WARNING: FLAG_2 is not set"
+  echo "ERROR: FLAG_2 is not set"
+  exit 1
+fi
+
+if [[ -z "${SECRET_KEY:-}" ]]; then
+  echo "ERROR: SECRET_KEY is not set"
+  exit 1
 fi
 
 # --- Replace placeholder in /app/flag ---
 if [[ -f "/app/flag" ]]; then
   if grep -q "REPLACE_THIS_STRING_WITH_SERVER_FLAG" "/app/flag"; then
-    echo "Replacing placeholder in flag with $FLAG_2"
     sed -i "s/REPLACE_THIS_STRING_WITH_SERVER_FLAG/${FLAG_2}/g" /app/flag
   fi
 else
