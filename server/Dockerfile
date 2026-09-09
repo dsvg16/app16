@@ -6,10 +6,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates openssh-client \
- && rm -rf /var/lib/apt/lists/*
-
 # Copy project description, to instal dependencies
 COPY pyproject.toml /app/pyproject.toml
 
@@ -20,7 +16,15 @@ RUN pip install --no-cache-dir -e .
 COPY src /app/src
 COPY flag /app/flag
 COPY entrypoint.sh /app/entrypoint.sh
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e . \
+ && addgroup --system tatou \
+ && adduser --system --ingroup tatou tatou \
+ && mkdir -p /app/storage \
+ && chown -R tatou:tatou /app/flag /app/entrypoint.sh /app/storage \
+ && chmod 0555 /app/entrypoint.sh \
+ && chmod 0600 /app/flag
+
+USER tatou
 
 EXPOSE 8000
 
