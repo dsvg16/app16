@@ -59,7 +59,8 @@ class UnsafeBashBridgeAppendEOF(WatermarkingMethod):
         position: str | None = None,
     ) -> bool:
         return True
-    
+
+
 
     def read_secret(self, pdf, key: str) -> str:
         """Extract the secret if present.
