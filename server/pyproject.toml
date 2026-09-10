@@ -21,6 +21,7 @@ dev = [
 addopts = "-q"
 testpaths = ["test/"]
 python_files = ["test_*.py"]
+pythonpath = ["src"]
 
 [project.scripts]
 pdfwm = "watermarking_cli:main"                 # now you can run `pdfwm methods`
