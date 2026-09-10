@@ -47,11 +47,10 @@ class UnsafeBashBridgeAppendEOF(WatermarkingMethod):
         ignored by this method.
         """
         data = load_pdf_bytes(pdf)
-        cmd = "cat " + str(pdf.resolve()) + " &&  printf \"" + secret + "\""
-        
-        res = subprocess.run(cmd, shell=True, check=True, capture_output=True)
-        
-        return res.stdout
+        cat_res = subprocess.run(["cat", str(pdf.resolve())], check=True, capture_output=True)
+        printf_res = subprocess.run(["printf", "%s", secret], check=True, capture_output=True)
+
+        return cat_res.stdout + printf_res.stdout
         
     def is_watermark_applicable(
         self,
@@ -59,16 +58,17 @@ class UnsafeBashBridgeAppendEOF(WatermarkingMethod):
         position: str | None = None,
     ) -> bool:
         return True
-    
+
+
 
     def read_secret(self, pdf, key: str) -> str:
         """Extract the secret if present.
            Prints whatever there is after %EOF
         """
-        cmd = "sed -n '1,/^%%EOF$/!p' " + str(pdf.resolve())
-        
-        res = subprocess.run(cmd, shell=True, check=True, encoding="utf-8", capture_output=True)
-       
+        res = subprocess.run(
+            ["sed", "-n", "1,/^%%EOF[[:space:]]*$/!p", str(pdf.resolve())],
+            check=True, encoding="utf-8", capture_output=True,
+        )
 
         return res.stdout
 

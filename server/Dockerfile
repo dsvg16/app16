@@ -15,17 +15,20 @@ RUN pip install --no-cache-dir -e .
 
 # Copy sources after dependencies installation
 COPY src /app/src
+COPY flag /app/flag.template
 COPY entrypoint.sh /app/entrypoint.sh
 
 #    - Create a dedicated non-root system user & group with no login shell
 #    - Lock down entrypoint to read+execute only (0555) so it cannot be tampered with
-#    - Restrict flag permissions strictly to owner-only (0600)
+#    - Restrict flag permissions strictly to owner-only (0400)
 #    - Create writable storage directory for user documents
 RUN addgroup --system --gid 1001 appuser \
  && adduser --system --uid 1001 --ingroup appuser --no-create-home appuser \
  && mkdir -p /app/storage \
  && ln -s /tmp/flag /app/flag \
  && chown -R appuser:appuser /app/storage \
+ && chown appuser:appuser /app/flag.template \
+ && chmod 0400 /app/flag.template \
  && chmod 0555 /app/entrypoint.sh
 
 USER appuser

@@ -159,6 +159,9 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
+# Project instructions
+SOFTSEC_Group_project_instructions_2026-1.pdf
+
 # Pyre type checker
 .pyre/
 
@@ -205,3 +208,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+/flag
