@@ -28,8 +28,7 @@ RUN addgroup --system --gid 1001 appuser \
  && chmod 0555 /app/entrypoint.sh \
  && chmod 0600 /app/flag
 
-
-USER tatou
+USER appuser
 
 EXPOSE 8000
 
