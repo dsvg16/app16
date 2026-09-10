@@ -16,13 +16,18 @@ RUN pip install --no-cache-dir -e .
 COPY src /app/src
 COPY flag /app/flag
 COPY entrypoint.sh /app/entrypoint.sh
-RUN pip install --no-cache-dir -e . \
- && addgroup --system tatou \
- && adduser --system --ingroup tatou tatou \
+
+#    - Create a dedicated non-root system user & group with no login shell
+#    - Lock down entrypoint to read+execute only (0555) so it cannot be tampered with
+#    - Restrict flag permissions strictly to owner-only (0600)
+#    - Create writable storage directory for user documents
+RUN addgroup --system --gid 1001 appuser \
+ && adduser --system --uid 1001 --ingroup appuser --no-create-home appuser \
  && mkdir -p /app/storage \
- && chown -R tatou:tatou /app/flag /app/entrypoint.sh /app/storage \
+ && chown -R appuser:appuser /app/flag /app/storage \
  && chmod 0555 /app/entrypoint.sh \
  && chmod 0600 /app/flag
+
 
 USER tatou
 

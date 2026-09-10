@@ -15,10 +15,13 @@ fi
 if [[ -f "/app/flag" ]]; then
   if grep -q "REPLACE_THIS_STRING_WITH_SERVER_FLAG" "/app/flag"; then
     sed -i "s/REPLACE_THIS_STRING_WITH_SERVER_FLAG/${FLAG_2}/g" /app/flag
+    chmod 400 /app/flag
   fi
 else
   echo "WARNING: /app/flag not found, skipping"
 fi
+
+unset FLAG_2
 
 # --- Start the server ---
 echo "Starting server..."
