@@ -11,13 +11,12 @@ if [[ -z "${SECRET_KEY:-}" ]]; then
   exit 1
 fi
 
-# --- Replace placeholder in /app/flag ---
-if [[ -f "/app/flag" ]]; then
-  if grep -q "REPLACE_THIS_STRING_WITH_SERVER_FLAG" "/app/flag"; then
-    sed -i "s/REPLACE_THIS_STRING_WITH_SERVER_FLAG/${FLAG_2}/g" /app/flag
-  fi
+# --- Render /app/flag (symlinked to /tmp/flag) from its template ---
+if [[ -f "/app/flag.template" ]]; then
+  sed "s/REPLACE_THIS_STRING_WITH_SERVER_FLAG/${FLAG_2}/g" /app/flag.template > /tmp/flag
+  chmod 0600 /tmp/flag
 else
-  echo "WARNING: /app/flag not found, skipping"
+  echo "WARNING: /app/flag.template not found, skipping"
 fi
 
 # --- Start the server ---

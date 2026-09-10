@@ -6,23 +6,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Copy project description, to instal dependencies
+# Copy project description and sources, then install once everything is present
 COPY pyproject.toml /app/pyproject.toml
-
-# Install runtime dependencies
-RUN pip install --no-cache-dir -e .
-
-# Copy sources after dependencies installation
 COPY src /app/src
-COPY flag /app/flag
+
+COPY flag /app/flag.template
 COPY entrypoint.sh /app/entrypoint.sh
 RUN pip install --no-cache-dir -e . \
  && addgroup --system tatou \
  && adduser --system --ingroup tatou tatou \
  && mkdir -p /app/storage \
- && chown -R tatou:tatou /app/flag /app/entrypoint.sh /app/storage \
+ && ln -s /tmp/flag /app/flag \
+ && chown -R tatou:tatou /app/flag.template /app/entrypoint.sh /app/storage \
  && chmod 0555 /app/entrypoint.sh \
- && chmod 0600 /app/flag
+ && chmod 0600 /app/flag.template
 
 USER tatou
 
