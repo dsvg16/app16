@@ -14,10 +14,12 @@ fi
 # --- Render /app/flag (symlinked to /tmp/flag) from its template ---
 if [[ -f "/app/flag.template" ]]; then
   sed "s/REPLACE_THIS_STRING_WITH_SERVER_FLAG/${FLAG_2}/g" /app/flag.template > /tmp/flag
-  chmod 0600 /tmp/flag
+  chmod 400 /tmp/flag
 else
   echo "WARNING: /app/flag.template not found, skipping"
 fi
+
+unset FLAG_2
 
 # --- Start the server ---
 echo "Starting server..."
