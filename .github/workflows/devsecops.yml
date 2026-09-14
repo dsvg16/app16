@@ -2,9 +2,9 @@ name: Tatou DevSecOps Pipeline
 
 on:
   push:
-    branches: [ "irsad" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "irsad" ]
+    branches: [ "main" ]
 
 permissions:
   contents: read
