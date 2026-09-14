@@ -160,7 +160,9 @@ venv.bak/
 dmypy.json
 
 # Project instructions
+SOFTSEC Software Supply Chain.pdf
 SOFTSEC_Group_project_instructions_2026-1.pdf
+SOFTSEC_Group_project_instructions_2026-3.pdf
 
 # Pyre type checker
 .pyre/
@@ -209,5 +211,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Local-only recon/notes, never commit
+/notes/
 
 /flag
