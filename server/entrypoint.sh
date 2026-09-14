@@ -23,4 +23,4 @@ unset FLAG_2
 
 # --- Start the server ---
 echo "Starting server..."
-exec gunicorn -b 0.0.0.0:8000 server:app
+exec gunicorn -b 0.0.0.0:5000 server:app
