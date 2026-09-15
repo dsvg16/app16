@@ -7,6 +7,8 @@ services:
       - "${HOST_PORT:-5000}:5000"
     volumes:
       - user-files:/app/storage
+      - ./keys:/app/keys:ro
+      - ./Group_16.pdf:/app/source/Group_16.pdf:ro
     read_only: true
     tmpfs:
       - /tmp
@@ -24,6 +26,14 @@ services:
       - DB_PASSWORD=${MARIADB_PASSWORD}
       - FLAG_2=${FLAG_2}
       - SECRET_KEY=${SECRET_KEY}
+      - STORAGE_DIR=/app/storage
+      # RMAP: key paths are inside the read-only /app/keys mount
+      - RMAP_SERVER_PUB=/app/keys/server_pub.asc
+      - RMAP_SERVER_PRIV=/app/keys/server_priv.asc
+      - RMAP_CLIENT_KEYS_DIR=/app/keys/clients
+      - RMAP_KEY_PASSPHRASE=${RMAP_KEY_PASSPHRASE:-}
+      - RMAP_WM_KEY=${RMAP_WM_KEY:-}
+      - RMAP_SOURCE_PDF=/app/source/Group_16.pdf
     depends_on:
       db:
         condition: service_healthy
