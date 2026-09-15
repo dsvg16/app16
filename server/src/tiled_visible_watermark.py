@@ -4,6 +4,7 @@
 # it is meant to be visible so a leaked copy shows who leaked it.
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 from typing import Final
@@ -28,7 +29,7 @@ class TiledVisibleWatermark(WatermarkingMethod):
     _SUFFIX: Final[str] = ":1KMW"
     _CONTEXT: Final[bytes] = b"wm:tiled-visible:v1:"
     _DEFAULT_OPACITY: Final[float] = 0.10
-    # smallest font we use. also limits the secret to about 230 chars
+    # smallest font we use. also limits the secret to about 150 chars
     _MIN_FONTSIZE: Final[float] = 3.0
 
     @staticmethod
@@ -48,7 +49,10 @@ class TiledVisibleWatermark(WatermarkingMethod):
         ).hexdigest()[:32]
 
     def _token(self, secret: str, key: str) -> str:
-        return f"{self._PREFIX}{secret}|{self._mac(secret, key)}{self._SUFFIX}"
+        # base64 the secret so it has no spaces (the pdf text layer adds spaces,
+        # and we strip them on read). the mac is over the real secret.
+        enc = base64.urlsafe_b64encode(secret.encode("utf-8")).decode("ascii")
+        return f"{self._PREFIX}{enc}|{self._mac(secret, key)}{self._SUFFIX}"
 
     def _opacity(self, position: str | None) -> float:
         if not position:
@@ -76,7 +80,10 @@ class TiledVisibleWatermark(WatermarkingMethod):
         data = load_pdf_bytes(pdf)
         token = self._token(secret, key)
 
-        doc = pymupdf.open(stream=data, filetype="pdf")
+        try:
+            doc = pymupdf.open(stream=data, filetype="pdf")
+        except Exception as e:  # bad/corrupt pdf
+            raise WatermarkingError(f"could not open pdf: {e}") from e
         try:
             for page in doc:
                 self._stamp_page(page, token, opacity)
@@ -137,12 +144,15 @@ class TiledVisibleWatermark(WatermarkingMethod):
 
     def read_secret(self, pdf: PdfSource, key: str) -> str:
         data = load_pdf_bytes(pdf)
-        doc = pymupdf.open(stream=data, filetype="pdf")
+        try:
+            doc = pymupdf.open(stream=data, filetype="pdf")
+        except Exception as e:  # bad/corrupt pdf
+            raise WatermarkingError(f"could not open pdf: {e}") from e
         try:
             raw = "".join(page.get_text() for page in doc)
         finally:
             doc.close()
-        # remove spaces the pdf text may add between letters
+        # remove spaces the pdf text may add between letters (token has none)
         text = "".join(raw.split())
         start = text.find(self._PREFIX)
         if start == -1:
@@ -153,7 +163,11 @@ class TiledVisibleWatermark(WatermarkingMethod):
         body = text[start + len(self._PREFIX):end]
         if "|" not in body:
             raise SecretNotFoundError("watermark token malformed")
-        secret, mac = body.rsplit("|", 1)
+        enc, mac = body.rsplit("|", 1)
+        try:
+            secret = base64.urlsafe_b64decode(enc.encode("ascii")).decode("utf-8")
+        except Exception:
+            raise SecretNotFoundError("watermark token malformed")
         if not hmac.compare_digest(mac, self._mac(secret, key)):
             raise InvalidKeyError("watermark does not validate for key")
         return secret

@@ -96,6 +96,16 @@ def test_get_version_unknown_link_is_404_or_503(app):
     assert app.test_client().get("/api/get-version/" + "0" * 32).status_code in (404, 503)
 
 
+def test_valid_pgp_wrong_shape_gives_400_not_500(app, keydir):
+    from rmap.crypto import encrypt_json, load_key
+
+    server_pub = load_key(str(keydir / "server_pub.asc"))
+    bad = encrypt_json({"identity": IDENTITY}, server_pub)  # no nonceClient
+    resp = app.test_client().post("/api/rmap-initiate", json=bad)
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "rmap protocol error"}
+
+
 @pytest.mark.skipif(
     not os.environ.get("TATOU_DB_TEST"),
     reason="needs a live MariaDB; covered by the docker compose deploy check",

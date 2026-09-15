@@ -76,7 +76,7 @@ def test_rmap_shaped_secret_roundtrips(method, pdf_bytes):
 
 
 def test_long_secret_within_capacity_roundtrips(method, pdf_bytes):
-    secret = "X" * 200
+    secret = "X" * 120
     assert method.read_secret(method.add_watermark(pdf_bytes, secret, KEY), KEY) == secret
 
 
@@ -84,6 +84,21 @@ def test_oversized_secret_fails_loudly(method, pdf_bytes):
     # too long to fit should raise, not write a broken mark
     with pytest.raises(WatermarkingError):
         method.add_watermark(pdf_bytes, "X" * 400, KEY)
+
+
+def test_secret_with_spaces_roundtrips(method, pdf_bytes):
+    # secret with spaces/newline must survive (base64 handles it)
+    secret = "Group 03 leaked\tthis"
+    assert method.read_secret(method.add_watermark(pdf_bytes, secret, KEY), KEY) == secret
+
+
+def test_corrupt_pdf_raises_watermarking_error(method):
+    # starts with %PDF- but is broken -> clean error, not a raw pymupdf traceback
+    bad = b"%PDF-1.4 broken junk not really a pdf"
+    with pytest.raises(WatermarkingError):
+        method.add_watermark(bad, SECRET, KEY)
+    with pytest.raises(WatermarkingError):
+        method.read_secret(bad, KEY)
 
 
 def test_empty_secret_rejected(method, pdf_bytes):

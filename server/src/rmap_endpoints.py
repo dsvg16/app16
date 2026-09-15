@@ -11,6 +11,7 @@ from pathlib import Path
 
 from flask import jsonify, request, send_file
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
 
@@ -35,13 +36,17 @@ SYSTEM_USER_EMAIL = "rmap-system@tatou.local"
 MAX_VERSIONS_PER_IDENTITY = 200
 
 
-def _db_url() -> str:
-    user = os.environ.get("DB_USER", "tatou")
-    pw = os.environ.get("DB_PASSWORD", "")
-    host = os.environ.get("DB_HOST", "db")
-    port = int(os.environ.get("DB_PORT", "3306"))
-    name = os.environ.get("DB_NAME", "tatou")
-    return f"mysql+pymysql://{user}:{pw}@{host}:{port}/{name}?charset=utf8mb4"
+def _db_url() -> URL:
+    # URL.create escapes the password, so @ / # ? in it don't break the url
+    return URL.create(
+        "mysql+pymysql",
+        username=os.environ.get("DB_USER", "tatou"),
+        password=os.environ.get("DB_PASSWORD", ""),
+        host=os.environ.get("DB_HOST", "db"),
+        port=int(os.environ.get("DB_PORT", "3306")),
+        database=os.environ.get("DB_NAME", "tatou"),
+        query={"charset": "utf8mb4"},
+    )
 
 
 def _safe_link(link: str) -> str:
@@ -185,8 +190,12 @@ def register_rmap(app) -> None:
         if rmap_server is None:
             return jsonify({"error": "RMAP not configured"}), 503
         payload = request.get_json(force=True, silent=True) or {}
-        with handshake_lock:
-            _identity, resp1 = rmap_server.receiveMsg1(payload)
+        try:
+            with handshake_lock:
+                _identity, resp1 = rmap_server.receiveMsg1(payload)
+        except (RMAPError, KeyError, ValueError, TypeError):
+            # bad or wrong-shaped message -> same generic error
+            return jsonify({"error": "rmap protocol error"}), 400
         return jsonify(resp1)
 
     @app.post("/api/rmap-get-link")
@@ -198,10 +207,18 @@ def register_rmap(app) -> None:
         if not _source_ready():
             return jsonify({"error": "RMAP source document unavailable"}), 503
         payload = request.get_json(force=True, silent=True) or {}
-        with handshake_lock:
-            identity, link, resp2 = rmap_server.receiveMsg2(payload)
+        try:
+            with handshake_lock:
+                identity, link, resp2 = rmap_server.receiveMsg2(payload)
+        except (RMAPError, KeyError, ValueError, TypeError):
+            return jsonify({"error": "rmap protocol error"}), 400
         # make + save the version before returning the link (spec 5.5)
-        if not _ensure_version(link, identity):
+        try:
+            created = _ensure_version(link, identity)
+        except Exception:
+            app.logger.exception("rmap-get-link: could not create version")
+            return jsonify({"error": "service unavailable"}), 503
+        if not created:
             return jsonify({"error": "too many versions for this identity"}), 429
         return jsonify(resp2)
 
