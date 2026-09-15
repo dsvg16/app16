@@ -101,6 +101,38 @@ def test_corrupt_pdf_raises_watermarking_error(method):
         method.read_secret(bad, KEY)
 
 
+def test_unwatermarkable_pdf_is_rejected(method):
+    # header-valid but has no usable page -> must not return an unwatermarked copy
+    data = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
+    assert method.is_watermark_applicable(data) is False
+    with pytest.raises(WatermarkingError):
+        method.add_watermark(data, SECRET, KEY)
+
+
+def test_read_secret_rejects_bad_key(method, pdf_bytes):
+    wm = method.add_watermark(pdf_bytes, SECRET, KEY)
+    with pytest.raises(ValueError):
+        method.read_secret(wm, None)
+    with pytest.raises(ValueError):
+        method.read_secret(wm, "")
+
+
+def test_is_applicable_false_for_bad_position(method, pdf_bytes):
+    assert method.is_watermark_applicable(pdf_bytes, position="abc") is False
+    assert method.is_watermark_applicable(pdf_bytes, position="0") is False
+    assert method.is_watermark_applicable(pdf_bytes) is True
+
+
+def test_read_secret_ignores_a_decoy_marker(method, pdf_bytes):
+    # a fake WMK1: token already in the doc must not stop us finding the real one
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    doc[0].insert_text((60, 60), "WMK1:Zm9v|deadbeefdeadbeefdeadbeefdeadbeef:1KMW")
+    decoy = doc.tobytes()
+    doc.close()
+    wm = method.add_watermark(decoy, SECRET, KEY)
+    assert method.read_secret(wm, KEY) == SECRET
+
+
 def test_empty_secret_rejected(method, pdf_bytes):
     with pytest.raises(ValueError):
         method.add_watermark(pdf_bytes, "", KEY)

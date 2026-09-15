@@ -9,7 +9,10 @@ import hashlib
 import hmac
 from typing import Final
 
-import pymupdf
+try:
+    import pymupdf
+except ImportError:  # older PyMuPDF only exposes the fitz name
+    import fitz as pymupdf
 
 from watermarking_method import (
     InvalidKeyError,
@@ -85,8 +88,12 @@ class TiledVisibleWatermark(WatermarkingMethod):
         except Exception as e:  # bad/corrupt pdf
             raise WatermarkingError(f"could not open pdf: {e}") from e
         try:
+            placed = 0
             for page in doc:
-                self._stamp_page(page, token, opacity)
+                placed += self._stamp_page(page, token, opacity)
+            if placed == 0:
+                # no page could take the mark (e.g. a pdf with no pages)
+                raise WatermarkingError("pdf has no page to watermark")
             # clear metadata and keep the source id so output is the same each time
             doc.set_metadata({})
             doc.del_xml_metadata()
@@ -95,7 +102,7 @@ class TiledVisibleWatermark(WatermarkingMethod):
             doc.close()
         return out
 
-    def _stamp_page(self, page, token: str, opacity: float) -> None:
+    def _stamp_page(self, page, token: str, opacity: float) -> int:
         rect = page.rect
         margin = 20.0
         usable = max(rect.width - 2 * margin, 1.0)
@@ -115,6 +122,7 @@ class TiledVisibleWatermark(WatermarkingMethod):
         writer = pymupdf.TextWriter(rect, color=(0.5, 0.5, 0.5))
         step_x = width + 30.0
         step_y = max(fontsize * 6.0, 40.0)
+        count = 0
         y = margin + fontsize
         while y < rect.height:
             x = margin
@@ -122,10 +130,13 @@ class TiledVisibleWatermark(WatermarkingMethod):
             # at least one token per row
             while not placed or x + width <= rect.width - margin:
                 writer.append((x, y), token, fontsize=fontsize)
+                count += 1
                 placed = True
                 x += step_x
             y += step_y
-        writer.write_text(page, opacity=opacity)
+        if count:
+            writer.write_text(page, opacity=opacity)
+        return count
 
     def is_watermark_applicable(
         self,
@@ -133,6 +144,7 @@ class TiledVisibleWatermark(WatermarkingMethod):
         position: str | None = None,
     ) -> bool:
         try:
+            self._opacity(position)  # reject a bad position too
             data = load_pdf_bytes(pdf)
             doc = pymupdf.open(stream=data, filetype="pdf")
             try:
@@ -143,6 +155,8 @@ class TiledVisibleWatermark(WatermarkingMethod):
             return False
 
     def read_secret(self, pdf: PdfSource, key: str) -> str:
+        if not isinstance(key, str) or not key:
+            raise ValueError("Key must be a non-empty string")
         data = load_pdf_bytes(pdf)
         try:
             doc = pymupdf.open(stream=data, filetype="pdf")
@@ -154,20 +168,33 @@ class TiledVisibleWatermark(WatermarkingMethod):
             doc.close()
         # remove spaces the pdf text may add between letters (token has none)
         text = "".join(raw.split())
-        start = text.find(self._PREFIX)
-        if start == -1:
+        # check every WMK1: ... :1KMW candidate; the doc may hold a decoy marker,
+        # so return the first one that actually authenticates.
+        found_prefix = False
+        saw_valid_token = False
+        pos = 0
+        while True:
+            start = text.find(self._PREFIX, pos)
+            if start == -1:
+                break
+            found_prefix = True
+            end = text.find(self._SUFFIX, start)
+            if end == -1:
+                break
+            body = text[start + len(self._PREFIX):end]
+            pos = end + len(self._SUFFIX)
+            if "|" not in body:
+                continue
+            enc, mac = body.rsplit("|", 1)
+            try:
+                secret = base64.urlsafe_b64decode(enc.encode("ascii")).decode("utf-8")
+            except Exception:
+                continue
+            saw_valid_token = True
+            if hmac.compare_digest(mac, self._mac(secret, key)):
+                return secret
+        if not found_prefix:
             raise SecretNotFoundError("no tiled-visible watermark found")
-        end = text.find(self._SUFFIX, start)
-        if end == -1:
-            raise SecretNotFoundError("watermark token truncated")
-        body = text[start + len(self._PREFIX):end]
-        if "|" not in body:
-            raise SecretNotFoundError("watermark token malformed")
-        enc, mac = body.rsplit("|", 1)
-        try:
-            secret = base64.urlsafe_b64decode(enc.encode("ascii")).decode("utf-8")
-        except Exception:
-            raise SecretNotFoundError("watermark token malformed")
-        if not hmac.compare_digest(mac, self._mac(secret, key)):
+        if saw_valid_token:
             raise InvalidKeyError("watermark does not validate for key")
-        return secret
+        raise SecretNotFoundError("watermark token malformed")

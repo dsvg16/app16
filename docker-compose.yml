@@ -7,6 +7,8 @@ services:
       - "${HOST_PORT:-5000}:5000"
     volumes:
       - user-files:/app/storage
+      # provide these on the host before "up": keys/ (server + client .asc)
+      # and Group_16.pdf. without keys rmap stays off (503); without the pdf get-link is 503.
       - ./keys:/app/keys:ro
       - ./Group_16.pdf:/app/source/Group_16.pdf:ro
     read_only: true

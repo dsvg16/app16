@@ -34,6 +34,7 @@ SYSTEM_USER_LOGIN = "rmap-system"
 SYSTEM_USER_EMAIL = "rmap-system@tatou.local"
 # cap versions per identity so nobody can fill the disk
 MAX_VERSIONS_PER_IDENTITY = 200
+MAX_PENDING_HANDSHAKES = 5000
 
 
 def _db_url() -> URL:
@@ -63,15 +64,16 @@ def register_rmap(app) -> None:
     wm_key = os.environ.get("RMAP_WM_KEY", "")
     engine = create_engine(_db_url(), pool_pre_ping=True, future=True)
     handshake_lock = threading.Lock()
+    version_lock = threading.Lock()
 
     def _source_ready() -> bool:
-        # check the source really is a pdf file
+        # must be a real, watermarkable pdf. a 0-page pdf would pass a header
+        # check but produce an unwatermarked copy, so check applicability.
         try:
-            if not source_pdf.is_file():
-                return False
-            with source_pdf.open("rb") as fh:  # only read the header
-                return fh.read(5) == b"%PDF-"
-        except OSError:
+            return bool(source_pdf.is_file()) and WMUtils.is_watermarking_applicable(
+                method=WM_METHOD, pdf=str(source_pdf)
+            )
+        except Exception:
             return False
 
     rmap_server = None
@@ -189,6 +191,10 @@ def register_rmap(app) -> None:
     def rmap_initiate():
         if rmap_server is None:
             return jsonify({"error": "RMAP not configured"}), 503
+        # bound the library's in-memory pending-nonce table against msg1 spam
+        pending = getattr(rmap_server, "_nonce_server_index", None)
+        if pending is not None and len(pending) >= MAX_PENDING_HANDSHAKES:
+            return jsonify({"error": "too many pending handshakes"}), 429
         payload = request.get_json(force=True, silent=True) or {}
         try:
             with handshake_lock:
@@ -212,9 +218,11 @@ def register_rmap(app) -> None:
                 identity, link, resp2 = rmap_server.receiveMsg2(payload)
         except (RMAPError, KeyError, ValueError, TypeError):
             return jsonify({"error": "rmap protocol error"}), 400
-        # make + save the version before returning the link (spec 5.5)
+        # make + save the version before returning the link (spec 5.5).
+        # the lock keeps the quota count + insert atomic across threads.
         try:
-            created = _ensure_version(link, identity)
+            with version_lock:
+                created = _ensure_version(link, identity)
         except Exception:
             app.logger.exception("rmap-get-link: could not create version")
             return jsonify({"error": "service unavailable"}), 503
