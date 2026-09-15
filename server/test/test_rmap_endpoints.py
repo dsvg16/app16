@@ -1,5 +1,4 @@
 # RMAP endpoint tests using the real RMAPClient.
-# the full get-link flow needs a database, so it is gated behind TATOU_DB_TEST.
 from __future__ import annotations
 
 import os
