@@ -54,6 +54,21 @@ jobs:
     name: Run Pytest Suite
     runs-on: ubuntu-latest
     needs: security-scan
+    services:
+      db:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: ci-root
+          MARIADB_DATABASE: tatou
+          MARIADB_USER: tatou
+          MARIADB_PASSWORD: ci-pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root --password=ci-root --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -68,9 +83,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e "./server[dev]"
 
-      - name: Execute Tests
+      - name: Load Database Schema
         run: |
-          pytest server/test
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mariadb-client
+          mariadb -h 127.0.0.1 -P 3306 -u root --password=ci-root < db/tatou.sql
+
+      # TATOU_DB_TEST makes the full RMAP handshake tests run instead of skip.
+      - name: Execute Tests
+        env:
+          TATOU_DB_TEST: "1"
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_USER: tatou
+          DB_PASSWORD: ci-pass
+          DB_NAME: tatou
+        run: |
+          pytest server/test \
+            --cov=server/src --cov-branch \
+            --cov-report=term-missing --cov-fail-under=75
 
   container-scan:
     name: Build & Scan Container Image
