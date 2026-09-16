@@ -25,6 +25,7 @@ except Exception:  # dill is optional
 
 import watermarking_utils as WMUtils
 from watermarking_method import WatermarkingMethod
+from rmap_endpoints import register_rmap
 #from watermarking_utils import METHODS, apply_watermark, read_watermark, explore_pdf, is_watermarking_applicable, get_method
 
 def create_app():
@@ -969,6 +970,7 @@ def create_app():
             "position": position
         }), 201
 
+    register_rmap(app)
     return app
 
 
