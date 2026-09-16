@@ -10,8 +10,13 @@ WORKDIR /app
 # Copy project description, to instal dependencies
 COPY pyproject.toml /app/pyproject.toml
 
-# Install runtime dependencies
-RUN pip install --no-cache-dir -e .
+# git is only needed to fetch the pinned rmap commit, so remove it after
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && pip install --no-cache-dir -e . \
+ && apt-get purge -y git \
+ && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/*
 
 # Copy sources after dependencies installation
 COPY src /app/src
@@ -33,7 +38,7 @@ RUN addgroup --system --gid 1001 appuser \
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 5000
 
 # Default command runs the web server
 CMD ["./entrypoint.sh"]

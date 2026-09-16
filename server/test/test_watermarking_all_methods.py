@@ -25,13 +25,14 @@ if not CASES:
 # --------- fixtures ----------
 @pytest.fixture(scope="session")
 def sample_pdf_path(tmp_path_factory) -> Path:
-    """Minimal but recognizable PDF bytes."""
+    # a real one-page pdf. the old stub had no pages so pymupdf methods skipped.
+    import pymupdf
+
     pdf = tmp_path_factory.mktemp("pdfs") / "sample.pdf"
-    pdf.write_bytes(
-        b"%PDF-1.4\n"
-        b"1 0 obj\n<< /Type /Catalog >>\nendobj\n"
-        b"%%EOF\n"
-    )
+    doc = pymupdf.open()
+    doc.new_page()
+    doc.save(pdf)
+    doc.close()
     return pdf
 
 @pytest.fixture(scope="session")
