@@ -62,6 +62,11 @@ def create_app():
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
 
+    #File handler (shared volume for SIEM)
+    #_log_file = Path(app.config["STORAGE_DIR"]) / "server.log"
+    #_file_handler = logging.FileHandler(_log_file, encoding="utf-8")
+    #_file_handler.setFormatter(JsonFormatter())
+
     # app logger: INFO (security events); root + noisy libs: WARNING
     app.logger.handlers = [handler]
     app.logger.setLevel(logging.INFO)
@@ -86,6 +91,14 @@ def create_app():
         g.request_id = str(uuid.uuid4())
 
     @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault(
+            "Referrer-Policy",
+            "strict-origin-when-cross-origin",
+        )
+        return response
     def _log_request(resp):
         try:
             # never log healthz
@@ -131,6 +144,7 @@ def create_app():
     app.config["DB_NAME"] = os.environ.get("DB_NAME", "tatou")
 
     app.config["STORAGE_DIR"].mkdir(parents=True, exist_ok=True)
+    app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024
 
     # --- DB engine only (no Table metadata) ---
     def db_url() -> str:
@@ -310,7 +324,7 @@ def create_app():
         stored_path.chmod(0o600)
         sha_hex = _sha256_file(stored_path)
         size = stored_path.stat().st_size
-        MAX_PARSE_SIZE = 50 * 1024 * 1024
+        MAX_PARSE_SIZE = 2 * 1024 * 1024
         if size > MAX_PARSE_SIZE:
             stored_path.unlink(missing_ok=True)
             _json_log(app.logger, logging.WARNING, "upload_reject",
@@ -413,7 +427,7 @@ def create_app():
                         JOIN Versions v ON d.id = v.documentid
                         WHERE u.id = :uid AND d.id = :did
                     """),
-                    {"glogin": str(g.user["login"]), "did": document_id},
+                    {"uid": str(g.user["id"]), "did": document_id},
                 ).all()
         except Exception as e:
             return jsonify({"error": "Failed to process DB request"}), 503
@@ -443,7 +457,7 @@ def create_app():
                         JOIN Versions v ON d.id = v.documentid
                         WHERE u.id = :uid
                     """),
-                    {"glogin": str(g.user["login"])},
+                    {"uid": str(g.user["id"])},
                 ).all()
         except Exception as e:
             return jsonify({"error": "Failed to process DB request"}), 503
@@ -845,7 +859,7 @@ def create_app():
             _json_log(app.logger, logging.WARNING, "watermark_applicability_fail",
                 ts=int(time.time()), doc_id=int(doc_id), user=int(g.user["id"]), method=method,
                 reason="check failed", error=str(e))
-            return jsonify({"error": f"watermark applicability check failed: {e}"}), 400
+            return jsonify({"error": "watermark applicability check failed"}), 400
 
         # apply watermark → bytes
         try:
@@ -873,7 +887,8 @@ def create_app():
         dest_dir = file_path.parent / "watermarks"
         dest_dir.mkdir(parents=True, exist_ok=True)
 
-        candidate = f"{base_name}__{intended_slug}.pdf"
+        #candidate = f"{base_name}__{intended_slug}.pdf"
+        candidate = f"{base_name}__{intended_slug}__{uuid.uuid4().hex}.pdf"
         dest_path = dest_dir / candidate
 
         # write bytes
@@ -1085,7 +1100,7 @@ def create_app():
             _json_log(app.logger, logging.WARNING, "wm_read_fail",
                 ts=int(time.time()), doc_id=int(doc_id), method=method,
                 error=str(e), user=int(g.user["id"]))
-            return jsonify({"error": f"Error when attempting to read watermark: {e}"}), 400
+            return jsonify({"error": "Error when attempting to read watermark"}), 400
 
         _json_log(app.logger, logging.INFO, "wm_read_ok",
             ts=int(time.time()), doc_id=int(doc_id), method=method,
