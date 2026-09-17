@@ -7,6 +7,7 @@ import shutil
 import datetime as dt
 from pathlib import Path
 from functools import wraps
+import logging, time, uuid, json
 
 from flask import Flask, jsonify, request, g, send_file
 from werkzeug.utils import secure_filename
@@ -28,8 +29,94 @@ from watermarking_method import WatermarkingMethod
 from rmap_endpoints import register_rmap
 #from watermarking_utils import METHODS, apply_watermark, read_watermark, explore_pdf, is_watermarking_applicable, get_method
 
+
+# ------- Structured JSON logging ---------- #
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        base = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
+            "level": record.levelname,
+            "msg": record.getMessage(),
+            "logger": record.name,
+        }
+        # allow extra dict
+        if hasattr(record, "extra") and isinstance(record.extra, dict):
+            base.update(record.extra)
+        return json.dumps(base, ensure_ascii=False)
+
+def _json_log(logger, level, msg, **extra):
+    logger.log(level, msg, extra={"extra": extra})
+# ------- End structured logging helpers ------- ""
+
+
 def create_app():
     app = Flask(__name__)
+
+    SECURITY_PATHS = {
+        "/api/login", "/api/upload-document", "/api/delete-document",
+        "/api/create-watermark", "/api/read-watermark",
+        "/api/rmap-initiate", "/api/rmap-get-link"
+    }
+
+    # ------- Install JSON logger & request logging ---- #
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter())
+
+    # app logger: INFO (security events); root + noisy libs: WARNING
+    app.logger.handlers = [handler]
+    app.logger.setLevel(logging.INFO)
+    app.logger.propagate = False
+
+    #root = logging.getLogger()
+    #root.handlers = [handler]
+    #root.setLevel(logging.WARNING)
+
+    for _noisy in ("werkzeug", "urllib3", "requests", "sqlalchemy.engine", "sqlalchemy.pool"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+
+    @app.before_request
+    def _start_timer():
+        g._t0 = time.time()
+        g.request_id = str(uuid.uuid4())
+
+    @app.after_request
+    def _log_request(resp):
+        try:
+            # never log healthz
+            if request.path == "/healthz":
+                return resp
+
+            # only log errors OR sensitive endpoints
+            if resp.status_code < 400 and request.path not in SECURITY_PATHS:
+                return resp
+
+            start = getattr(g, "_t0", None)
+            latency = int((time.time() - start) * 1000) if start else 0
+            u = getattr(g, "user", None)
+            user_id = int(u.get("id")) if isinstance(u, dict) and u.get("id") is not None else -1
+
+            _json_log(
+                app.logger, logging.INFO, "http_access",
+                ts=int(time.time()),
+                request_id=getattr(g, "request_id", None),
+                ip=request.headers.get("X-Forwarded-For", request.remote_addr),
+                method=request.method,
+                path=request.path,
+                status=int(resp.status_code),
+                latency_ms=latency,
+                user=user_id,
+            )
+        except Exception:
+            pass
+        return resp
+    # ---- end JSON logger wiring ---- #
+
 
     # --- Config ---
     # a random key per boot invalidates old tokens, but is never a known value
@@ -159,9 +246,13 @@ def create_app():
             return jsonify({"error": "Failed to process DB request"}), 503
 
         if not row or not check_password_hash(row.hpassword, password):
+            _json_log(app.logger, logging.WARNING, "login_fail",
+                        ts=int(time.time()), ip=request.remote_addr, email=email)
             return jsonify({"error": "invalid credentials"}), 401
 
         token = _serializer().dumps({"uid": int(row.id), "login": row.login, "email": row.email})
+        _json_log(app.logger, logging.INFO, "login_ok",
+                ts=int(time.time()), ip=request.remote_addr, user=int(row.id), login=row.login)
         return jsonify({"token": token, "token_type": "bearer", "expires_in": app.config["TOKEN_TTL_SECONDS"]}), 200
 
     # POST /api/upload-document  (multipart/form-data)
@@ -209,6 +300,9 @@ def create_app():
         header = file.read(4)
         file.seek(0)
         if header != b"%PDF":
+            _json_log(app.logger, logging.WARNING, "upload_reject",
+                    ts=int(time.time()), ip=request.remote_addr,
+                    reason="not a PDF", filename=fname, user=g.user["id"])
             return jsonify({"error": "uploaded file is not a valid PDF"}), 400
 
         file.save(stored_path)
@@ -219,6 +313,9 @@ def create_app():
         MAX_PARSE_SIZE = 50 * 1024 * 1024
         if size > MAX_PARSE_SIZE:
             stored_path.unlink(missing_ok=True)
+            _json_log(app.logger, logging.WARNING, "upload_reject",
+                    ts=int(time.time()), ip=request.remote_addr,
+                reason="file too large", size=size, user=g.user["id"])
             return jsonify({"error": "file too large"}), 413
 
         try:
@@ -251,6 +348,10 @@ def create_app():
             #Clean uploaded file if DB execution failed
             stored_path.unlink(missing_ok=True)
             return jsonify({"error": "Failed to process DB request"}), 503
+
+        _json_log(app.logger, logging.INFO, "upload_ok",
+                ts=int(time.time()), ip=request.remote_addr, user=g.user["id"],
+                filename=fname, size=size, sha256=row.sha256_hex)
 
         return jsonify({
             "id": int(row.id),
@@ -652,6 +753,9 @@ def create_app():
         except Exception as e:
             return jsonify({"error": "Failed to process DB request delete"}), 503
 
+        _json_log(app.logger, logging.INFO, "doc_delete",
+                ts=int(time.time()), user=int(g.user["id"]), doc_id=doc_id,
+                file_deleted=file_deleted)
         return jsonify({
             "deleted": True,
             "id": doc_id,
@@ -733,8 +837,14 @@ def create_app():
                 position=position
             )
             if applicable is False:
+                _json_log(app.logger, logging.WARNING, "watermark_applicability_fail",
+                    ts=int(time.time()), user=int(g.user["id"]), method=method,
+                    reason="not applicable", doc_id=int(doc_id))
                 return jsonify({"error": "watermarking method not applicable"}), 400
         except Exception as e:
+            _json_log(app.logger, logging.WARNING, "watermark_applicability_fail",
+                ts=int(time.time()), doc_id=int(doc_id), user=int(g.user["id"]), method=method,
+                reason="check failed", error=str(e))
             return jsonify({"error": f"watermark applicability check failed: {e}"}), 400
 
         # apply watermark → bytes
@@ -747,8 +857,14 @@ def create_app():
                 position=position
             )
             if not isinstance(wm_bytes, (bytes, bytearray)) or len(wm_bytes) == 0:
+                _json_log(app.logger, logging.WARNING, "watermark_applicability_fail",
+                    ts=int(time.time()), doc_id=int(doc_id), user=int(g.user["id"]), method=method,
+                    reason="no output bytes")
                 return jsonify({"error": "watermarking produced no output"}), 500
         except Exception as e:
+            _json_log(app.logger, logging.WARNING, "watermark_applicability_fail",
+                ts=int(time.time()), doc_id=int(doc_id), user=int(g.user["id"]), method=method,
+                reason="apply failed", error=str(e))
             return jsonify({"error": f"watermarking failed: {e}"}), 500
 
         # build destination file name: "<original_name>__<intended_to>.pdf"
@@ -796,6 +912,10 @@ def create_app():
                 pass
             return jsonify({"error": "Failed to process DB insert request"}), 503
 
+
+        _json_log(app.logger, logging.INFO, "wm_create",
+            ts=int(time.time()), doc_id=int(doc_id), user=int(g.user["id"]), method=method,
+            reason="success", intended_for=intended_for, size=len(wm_bytes))
         return jsonify({
             "id": vid,
             "documentid": doc_id,
@@ -962,7 +1082,14 @@ def create_app():
                 key=key
             )
         except Exception as e:
+            _json_log(app.logger, logging.WARNING, "wm_read_fail",
+                ts=int(time.time()), doc_id=int(doc_id), method=method,
+                error=str(e), user=int(g.user["id"]))
             return jsonify({"error": f"Error when attempting to read watermark: {e}"}), 400
+
+        _json_log(app.logger, logging.INFO, "wm_read_ok",
+            ts=int(time.time()), doc_id=int(doc_id), method=method,
+            user=int(g.user["id"]))
         return jsonify({
             "documentid": doc_id,
             "secret": secret,

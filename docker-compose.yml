@@ -20,6 +20,7 @@ services:
       - no-new-privileges:true
     environment:
       - PYTHONUNBUFFERED=1
+      - HOME=/tmp
       # DB connection details for future use by the API
       - DB_HOST=db
       - DB_PORT=3306
