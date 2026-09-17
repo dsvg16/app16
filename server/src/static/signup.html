@@ -3,6 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Restrict scripts, styles, and API connections to the same origin only -->
+  <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data:;
+      connect-src 'self';
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+  ">
+      <!-- Prevent the page from being embedded in frames/iframes -->
+  <meta http-equiv="X-Frame-Options" content="DENY">
+  <!-- Prevent browsers from MIME-type sniffing -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <!-- Stop leaking sensitive URLs/tokens in HTTP Referer headers -->
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>Sign up • Tatou</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -71,4 +88,3 @@
   </script>
 </body>
 </html>
-

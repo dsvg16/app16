@@ -20,6 +20,7 @@ RUN apt-get update \
 
 # Copy sources after dependencies installation
 COPY src /app/src
+COPY gunicorn.conf.py /app/gunicorn.conf.py
 COPY flag /app/flag.template
 COPY entrypoint.sh /app/entrypoint.sh
 

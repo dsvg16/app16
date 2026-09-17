@@ -3,6 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Security Headers -->
+  <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data:;
+      connect-src 'self';
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+  ">
+  <meta http-equiv="X-Frame-Options" content="DENY">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+
   <title>My Documents • Tatou</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -19,7 +34,6 @@
     </div>
   </header>
 
-  
   <main class="container" style="padding-bottom:40px;">
     <section class="card" style="margin:20px 0;">
       <h1 style="margin:0 0 12px;">My documents</h1>
@@ -69,7 +83,7 @@
   </main>
 
   <script>
-    const token = localStorage.getItem('authToken');
+    const token = sessionStorage.getItem('authToken');
     if (!token) window.location.href = 'login.html';
 
     function apiFetch(path, options = {}) {
@@ -77,7 +91,8 @@
       headers.set('Authorization', 'Bearer ' + token);
       return fetch(path, { ...options, headers });
     }
-    function apiFetchJSON(path, method, obj){
+
+    function apiFetchJSON(path, method, obj) {
       return apiFetch(path, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
@@ -86,7 +101,7 @@
     }
 
     let methodsCache = null;
-    async function loadMethods(){
+    async function loadMethods() {
       if (methodsCache) return methodsCache;
       const r = await apiFetch('/api/get-watermarking-methods');
       if (!r.ok) throw new Error('Failed to fetch methods');
@@ -102,50 +117,115 @@
     const modalTitle = document.getElementById('modalTitle');
     document.getElementById('modalClose').onclick = () => modal.hidden = true;
 
-    function humanSize(bytes){
-      const units = ['B','KB','MB','GB'];
-      let i=0, n=Number(bytes)||0; while(n>=1024 && i<units.length-1){n/=1024; i++;}
-      return n.toFixed(n<10 && i>0 ? 1 : 0)+' '+units[i];
+    function humanSize(bytes) {
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let i = 0, n = Number(bytes) || 0;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return n.toFixed(n < 10 && i > 0 ? 1 : 0) + ' ' + units[i];
     }
-    function escapeHtml(str){
-      return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s]));
-    }
-    function openModal(title, html){
+
+    function openModal(title, contentNodeOrText) {
       const main = document.querySelector('main');
       if (modal.parentElement !== main) main.appendChild(modal);
       modalTitle.textContent = title;
-      modalContent.innerHTML = html;
+      if (typeof contentNodeOrText === 'string') {
+        modalContent.textContent = contentNodeOrText;
+      } else if (contentNodeOrText instanceof Node) {
+        modalContent.replaceChildren(contentNodeOrText);
+      }
       modal.hidden = false;
     }
 
-    async function loadDocuments(){
-      docsBody.innerHTML = '<tr><td colspan="6" class="muted">Loading…</td></tr>';
+    async function loadDocuments() {
+      docsBody.replaceChildren();
+
+      const loadingRow = document.createElement('tr');
+      const loadingCell = document.createElement('td');
+      loadingCell.colSpan = 6;
+      loadingCell.className = 'muted';
+      loadingCell.textContent = 'Loading…';
+      loadingRow.appendChild(loadingCell);
+      docsBody.appendChild(loadingRow);
+
       try {
         const resp = await apiFetch('/api/list-documents');
-        if (!resp.ok) throw new Error('HTTP '+resp.status);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
-        const rows = (data.documents || []).map(doc => {
-          const created = doc.creation ? new Date(doc.creation).toLocaleString() : '';
-          return `<tr>
-            <td>${doc.id}</td>
-            <td>${escapeHtml(doc.name)}</td>
-            <td>${created}</td>
-            <td>${humanSize(doc.size)}</td>
-            <td class="mono" title="${doc.sha256}">${doc.sha256?.slice(0,10)}…</td>
-            <td>
-              <div class="row-actions">
-                <button class="btn" data-action="view" data-id="${doc.id}">View</button>
-                <button class="btn" data-action="versions" data-id="${doc.id}">Versions</button>
-                <button class="btn" data-action="watermark" data-id="${doc.id}">Watermark</button>
-                <button class="btn" data-action="readwm" data-id="${doc.id}">Read watermark</button>
-                <button class="btn" data-action="delete" data-id="${doc.id}">Delete</button>
-              </div>
-            </td>
-          </tr>`
-        }).join('');
-        docsBody.innerHTML = rows || '<tr><td colspan="6" class="muted">No documents yet. Upload one above.</td></tr>';
+
+        docsBody.replaceChildren();
+
+        const docs = data.documents || [];
+        if (docs.length === 0) {
+          const emptyRow = document.createElement('tr');
+          const emptyCell = document.createElement('td');
+          emptyCell.colSpan = 6;
+          emptyCell.className = 'muted';
+          emptyCell.textContent = 'No documents yet. Upload one above.';
+          emptyRow.appendChild(emptyCell);
+          docsBody.appendChild(emptyRow);
+          return;
+        }
+
+        docs.forEach(doc => {
+          const tr = document.createElement('tr');
+
+          const tdId = document.createElement('td');
+          tdId.textContent = doc.id;
+          tr.appendChild(tdId);
+
+          const tdName = document.createElement('td');
+          tdName.textContent = doc.name;
+          tr.appendChild(tdName);
+
+          const tdCreated = document.createElement('td');
+          tdCreated.textContent = doc.creation ? new Date(doc.creation).toLocaleString() : '';
+          tr.appendChild(tdCreated);
+
+          const tdSize = document.createElement('td');
+          tdSize.textContent = humanSize(doc.size);
+          tr.appendChild(tdSize);
+
+          const tdSha = document.createElement('td');
+          tdSha.className = 'mono';
+          tdSha.title = doc.sha256 || '';
+          tdSha.textContent = (doc.sha256 || '').slice(0, 10) + '…';
+          tr.appendChild(tdSha);
+
+          const tdActions = document.createElement('td');
+          const actionsDiv = document.createElement('div');
+          actionsDiv.className = 'row-actions';
+
+          const actions = [
+            { label: 'View', action: 'view' },
+            { label: 'Versions', action: 'versions' },
+            { label: 'Watermark', action: 'watermark' },
+            { label: 'Read watermark', action: 'readwm' },
+            { label: 'Delete', action: 'delete' }
+          ];
+
+          actions.forEach(({ label, action }) => {
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.setAttribute('data-action', action);
+            btn.setAttribute('data-id', doc.id);
+            btn.textContent = label;
+            actionsDiv.appendChild(btn);
+          });
+
+          tdActions.appendChild(actionsDiv);
+          tr.appendChild(tdActions);
+          docsBody.appendChild(tr);
+        });
+
       } catch (e) {
-        docsBody.innerHTML = `<tr><td colspan="6" class="error">Failed to load: ${escapeHtml(e.message)}</td></tr>`;
+        docsBody.replaceChildren();
+        const errRow = document.createElement('tr');
+        const errCell = document.createElement('td');
+        errCell.colSpan = 6;
+        errCell.className = 'error';
+        errCell.textContent = 'Failed to load: ' + e.message;
+        errRow.appendChild(errCell);
+        docsBody.appendChild(errRow);
       }
     }
 
@@ -156,7 +236,7 @@
       try {
         const resp = await apiFetch('/api/upload-document', { method: 'POST', body: fd });
         if (!resp.ok) {
-          const err = await resp.json().catch(()=>({}));
+          const err = await resp.json().catch(() => ({}));
           throw new Error(err.message || resp.statusText);
         }
         statusEl.textContent = 'Uploaded successfully';
@@ -165,7 +245,7 @@
       } catch (err) {
         statusEl.textContent = 'Upload failed: ' + err.message;
       } finally {
-        setTimeout(()=> statusEl.textContent = '', 3000);
+        setTimeout(() => statusEl.textContent = '', 3000);
       }
     });
 
@@ -177,33 +257,72 @@
       try {
         if (action === 'delete') {
           if (!confirm('Delete document #' + id + '?')) return;
-          const resp = await apiFetch('/api/delete-document/' + id, { method: 'DELETE' });
+          const resp = await apiFetch('/api/delete-document/' + encodeURIComponent(id), { method: 'DELETE' });
           if (!resp.ok) throw new Error('HTTP ' + resp.status);
           await loadDocuments();
         }
         if (action === 'view') {
-          const r = await apiFetch('/api/get-document/' + id);
+          const r = await apiFetch('/api/get-document/' + encodeURIComponent(id));
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const blob = await r.blob();
           const url = URL.createObjectURL(blob);
-          window.open(url, '_blank');
-          setTimeout(()=> URL.revokeObjectURL(url), 60_000);
+          const newWin = window.open(url, '_blank', 'noopener,noreferrer');
+          if (newWin) newWin.opener = null;
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
         }
         if (action === 'versions') {
-          const r = await apiFetch('/api/list-versions/' + id);
+          const r = await apiFetch('/api/list-versions/' + encodeURIComponent(id));
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const data = await r.json();
-          const list = (data.versions||[]).map(v => `
-            <li class="list-row">
-              <div>
-                <div><strong>Link:</strong> <a href="api/get-version/${escapeHtml(v.link)}">${escapeHtml(v.link)}</a></div>
-                <div class="muted small">Method: ${escapeHtml(v.method || '')} • Intended for: ${escapeHtml(v.intended_for || '')}</div>
-              </div>
-              <div class="row-actions">
-                <button class="btn" data-open-version="${v.link}">Open</button>
-              </div>
-            </li>`).join('');
-          openModal('Watermarked versions for #' + id, `<ul class="list">${list || '<li class=muted>No versions yet.</li>'}</ul>`);
+
+          const ul = document.createElement('ul');
+          ul.className = 'list';
+
+          const versions = data.versions || [];
+          if (versions.length === 0) {
+            const li = document.createElement('li');
+            li.className = 'muted';
+            li.textContent = 'No versions yet.';
+            ul.appendChild(li);
+          } else {
+            versions.forEach(v => {
+              const li = document.createElement('li');
+              li.className = 'list-row';
+
+              const infoDiv = document.createElement('div');
+              const linkDiv = document.createElement('div');
+              const strong = document.createElement('strong');
+              strong.textContent = 'Link: ';
+              linkDiv.appendChild(strong);
+
+              const a = document.createElement('a');
+              a.href = 'api/get-version/' + encodeURIComponent(v.link);
+              a.textContent = v.link;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              linkDiv.appendChild(a);
+
+              const metaDiv = document.createElement('div');
+              metaDiv.className = 'muted small';
+              metaDiv.textContent = `Method: ${v.method || ''} • Intended for: ${v.intended_for || ''}`;
+
+              infoDiv.appendChild(linkDiv);
+              infoDiv.appendChild(metaDiv);
+
+              const actionDiv = document.createElement('div');
+              actionDiv.className = 'row-actions';
+              const openBtn = document.createElement('button');
+              openBtn.className = 'btn';
+              openBtn.setAttribute('data-open-version', v.link);
+              openBtn.textContent = 'Open';
+              actionDiv.appendChild(openBtn);
+
+              li.appendChild(infoDiv);
+              li.appendChild(actionDiv);
+              ul.appendChild(li);
+            });
+          }
+          openModal('Watermarked versions for #' + id, ul);
         }
         if (action === 'watermark') {
           openCreateWatermarkForm(id);
@@ -216,65 +335,193 @@
       }
     });
 
-    async function openCreateWatermarkForm(documentId){
+    async function openCreateWatermarkForm(documentId) {
       const methods = await loadMethods();
-      const options = methods.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} — ${escapeHtml(m.description||'')}</option>`).join('');
-      openModal('Create watermark for #' + documentId, `
-        <form id="createWmForm" class="form-vertical">
-          <label>Method<select name="method" required><option value="" disabled selected>Select a method</option>${options}</select></label>
-          <label>Position<input name="position" placeholder="Position"></label>
-          <label>Key<input name="key" placeholder="Reader key" required></label>
-          <label>Secret<input name="secret" placeholder="Secret embedded in WM" required></label>
-          <label>Intended for<input name="intended_for" placeholder="Recipient or purpose"></label>
-          <div class="row-actions">
-            <button class="btn" type="button" id="cancelCreate">Cancel</button>
-            <button class="btn btn--primary" type="submit">Create</button>
-          </div>
-        </form>
-      `);
-      document.getElementById('cancelCreate').onclick = () => { modal.hidden = true; };
-      document.getElementById('createWmForm').addEventListener('submit', async (e) => {
+      const form = document.createElement('form');
+      form.className = 'form-vertical';
+
+      // Method select
+      const labelMethod = document.createElement('label');
+      labelMethod.textContent = 'Method ';
+      const selectMethod = document.createElement('select');
+      selectMethod.name = 'method';
+      selectMethod.required = true;
+
+      const optDefault = document.createElement('option');
+      optDefault.value = '';
+      optDefault.disabled = true;
+      optDefault.selected = true;
+      optDefault.textContent = 'Select a method';
+      selectMethod.appendChild(optDefault);
+
+      methods.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.name;
+        opt.textContent = `${m.name} — ${m.description || ''}`;
+        selectMethod.appendChild(opt);
+      });
+      labelMethod.appendChild(selectMethod);
+      form.appendChild(labelMethod);
+
+      // Inputs
+      const fields = [
+        { name: 'position', label: 'Position', placeholder: 'Position', required: false },
+        { name: 'key', label: 'Key', placeholder: 'Reader key', required: true },
+        { name: 'secret', label: 'Secret', placeholder: 'Secret embedded in WM', required: true },
+        { name: 'intended_for', label: 'Intended for', placeholder: 'Recipient or purpose', required: false }
+      ];
+
+      fields.forEach(f => {
+        const label = document.createElement('label');
+        label.textContent = f.label + ' ';
+        const input = document.createElement('input');
+        input.name = f.name;
+        input.placeholder = f.placeholder;
+        if (f.required) input.required = true;
+        label.appendChild(input);
+        form.appendChild(label);
+      });
+
+      // Buttons
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'row-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.onclick = () => { modal.hidden = true; };
+
+      const submitBtn = document.createElement('button');
+      submitBtn.type = 'submit';
+      submitBtn.className = 'btn btn--primary';
+      submitBtn.textContent = 'Create';
+
+      actionsDiv.appendChild(cancelBtn);
+      actionsDiv.appendChild(submitBtn);
+      form.appendChild(actionsDiv);
+
+      openModal('Create watermark for #' + documentId, form);
+
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const fd = new FormData(e.currentTarget);
+        const fd = new FormData(form);
         const payload = Object.fromEntries(fd.entries());
         try {
-          const r = await apiFetchJSON(`/api/create-watermark/${documentId}`, 'POST', payload);
+          const r = await apiFetchJSON(`/api/create-watermark/${encodeURIComponent(documentId)}`, 'POST', payload);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const data = await r.json();
-          openModal('Watermark created', `<p>Version created for document <strong>#${data.documentid}</strong>.</p>
-            <p><strong>Link:</strong> <code class="mono">${escapeHtml(data.link)}</code></p>
-            <div class="row-actions"><button class="btn" data-open-version="${data.link}">Open version</button></div>`);
-        } catch(err){
+
+          const resultDiv = document.createElement('div');
+
+          const p1 = document.createElement('p');
+          p1.textContent = `Version created for document #${data.documentid}.`;
+
+          const p2 = document.createElement('p');
+          const strong = document.createElement('strong');
+          strong.textContent = 'Link: ';
+          const code = document.createElement('code');
+          code.className = 'mono';
+          code.textContent = data.link;
+          p2.appendChild(strong);
+          p2.appendChild(code);
+
+          const actDiv = document.createElement('div');
+          actDiv.className = 'row-actions';
+          const openBtn = document.createElement('button');
+          openBtn.className = 'btn';
+          openBtn.setAttribute('data-open-version', data.link);
+          openBtn.textContent = 'Open version';
+          actDiv.appendChild(openBtn);
+
+          resultDiv.appendChild(p1);
+          resultDiv.appendChild(p2);
+          resultDiv.appendChild(actDiv);
+
+          openModal('Watermark created', resultDiv);
+        } catch (err) {
           alert('Create failed: ' + err.message);
         }
       });
     }
 
-    async function openReadWatermarkForm(documentId){
+    async function openReadWatermarkForm(documentId) {
       const methods = await loadMethods();
-      const options = methods.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} — ${escapeHtml(m.description||'')}</option>`).join('');
-      openModal('Read watermark for #' + documentId, `
-        <form id="readWmForm" class="form-vertical">
-          <label>Method<select name="method" required><option value="" disabled selected>Select a method</option>${options}</select></label>
-          <label>Position<input name="position" placeholder="Position"></label>
-          <label>Key<input name="key" placeholder="Reader key" required></label>
-          <div class="row-actions">
-            <button class="btn" type="button" id="cancelRead">Cancel</button>
-            <button class="btn btn--primary" type="submit">Read</button>
-          </div>
-        </form>
-      `);
-      document.getElementById('cancelRead').onclick = () => { modal.hidden = true; };
-      document.getElementById('readWmForm').addEventListener('submit', async (e) => {
+      const form = document.createElement('form');
+      form.className = 'form-vertical';
+
+      const labelMethod = document.createElement('label');
+      labelMethod.textContent = 'Method ';
+      const selectMethod = document.createElement('select');
+      selectMethod.name = 'method';
+      selectMethod.required = true;
+
+      const optDefault = document.createElement('option');
+      optDefault.value = '';
+      optDefault.disabled = true;
+      optDefault.selected = true;
+      optDefault.textContent = 'Select a method';
+      selectMethod.appendChild(optDefault);
+
+      methods.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.name;
+        opt.textContent = `${m.name} — ${m.description || ''}`;
+        selectMethod.appendChild(opt);
+      });
+      labelMethod.appendChild(selectMethod);
+      form.appendChild(labelMethod);
+
+      const fields = [
+        { name: 'position', label: 'Position', placeholder: 'Position' },
+        { name: 'key', label: 'Key', placeholder: 'Reader key', required: true }
+      ];
+
+      fields.forEach(f => {
+        const label = document.createElement('label');
+        label.textContent = f.label + ' ';
+        const input = document.createElement('input');
+        input.name = f.name;
+        input.placeholder = f.placeholder;
+        if (f.required) input.required = true;
+        label.appendChild(input);
+        form.appendChild(label);
+      });
+
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'row-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.onclick = () => { modal.hidden = true; };
+
+      const submitBtn = document.createElement('button');
+      submitBtn.type = 'submit';
+      submitBtn.className = 'btn btn--primary';
+      submitBtn.textContent = 'Read';
+
+      actionsDiv.appendChild(cancelBtn);
+      actionsDiv.appendChild(submitBtn);
+      form.appendChild(actionsDiv);
+
+      openModal('Read watermark for #' + documentId, form);
+
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const fd = new FormData(e.currentTarget);
+        const fd = new FormData(form);
         const payload = Object.fromEntries(fd.entries());
         try {
-          const r = await apiFetchJSON(`/api/read-watermark/${documentId}`, 'POST', payload);
+          const r = await apiFetchJSON(`/api/read-watermark/${encodeURIComponent(documentId)}`, 'POST', payload);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const data = await r.json();
-          openModal('Watermark data', `<pre class="pre">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`);
-        } catch(err){
+
+          const pre = document.createElement('pre');
+          pre.className = 'pre';
+          pre.textContent = JSON.stringify(data, null, 2);
+          openModal('Watermark data', pre);
+        } catch (err) {
           alert('Read failed: ' + err.message);
         }
       });
@@ -289,18 +536,21 @@
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const blob = await r.blob();
         const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        setTimeout(()=> URL.revokeObjectURL(url), 60_000);
+        const newWin = window.open(url, '_blank', 'noopener,noreferrer');
+        if (newWin) newWin.opener = null;
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
       } catch (err) {
         alert('Open failed: ' + err.message);
       }
     });
 
     document.getElementById('refreshBtn').onclick = loadDocuments;
-    document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('authToken'); window.location.href = 'login.html'; };
+    document.getElementById('logoutBtn').onclick = () => {
+      sessionStorage.removeItem('authToken');
+      window.location.href = 'login.html';
+    };
 
     loadDocuments();
   </script>
 </body>
 </html>
-

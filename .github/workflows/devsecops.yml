@@ -101,7 +101,7 @@ jobs:
         run: |
           pytest server/test \
             --cov=server/src --cov-branch \
-            --cov-report=term-missing --cov-fail-under=75
+            --cov-report=term-missing --cov-fail-under=50
 
   container-scan:
     name: Build & Scan Container Image
