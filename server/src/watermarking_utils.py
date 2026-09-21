@@ -42,7 +42,7 @@ from watermarking_method import (
     load_pdf_bytes,
 )
 from add_after_eof import AddAfterEOF
-from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
+#from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
 from tiled_visible_watermark import TiledVisibleWatermark
 
 # --------------------
@@ -51,7 +51,7 @@ from tiled_visible_watermark import TiledVisibleWatermark
 
 METHODS: Dict[str, WatermarkingMethod] = {
     AddAfterEOF.name: AddAfterEOF(),
-    UnsafeBashBridgeAppendEOF.name: UnsafeBashBridgeAppendEOF(),
+    #UnsafeBashBridgeAppendEOF.name: UnsafeBashBridgeAppendEOF(),
     TiledVisibleWatermark.name: TiledVisibleWatermark()
 }
 """Registry of available watermarking methods.
@@ -251,4 +251,3 @@ __all__ = [
     "explore_pdf",
     "is_watermarking_applicable"
 ]
-
