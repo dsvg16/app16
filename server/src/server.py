@@ -58,33 +58,6 @@ def create_app():
         "/api/rmap-initiate", "/api/rmap-get-link"
     }
 
-    # ------- Install JSON logger & request logging ---- #
-    handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter())
-
-    #File handler (shared volume for SIEM)
-    #_log_file = Path(app.config["STORAGE_DIR"]) / "server.log"
-    #_file_handler = logging.FileHandler(_log_file, encoding="utf-8")
-    #_file_handler.setFormatter(JsonFormatter())
-
-    # app logger: INFO (security events); root + noisy libs: WARNING
-    app.logger.handlers = [handler]
-    app.logger.setLevel(logging.INFO)
-    app.logger.propagate = False
-
-    #root = logging.getLogger()
-    #root.handlers = [handler]
-    #root.setLevel(logging.WARNING)
-
-    for _noisy in ("werkzeug", "urllib3", "requests", "sqlalchemy.engine", "sqlalchemy.pool"):
-        logging.getLogger(_noisy).setLevel(logging.WARNING)
-
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
-
     @app.before_request
     def _start_timer():
         g._t0 = time.time()
@@ -147,6 +120,35 @@ def create_app():
     app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024
 
     STORAGE_ROOT = app.config["STORAGE_DIR"].resolve()
+
+    # ------- Install JSON logger & request logging ---- #
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter())
+
+    #File handler (shared volume for SIEM)
+    _log_file = Path(app.config["STORAGE_DIR"]) / "server.log"
+    _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
+    _file_handler.setFormatter(JsonFormatter())
+
+    # app logger: INFO (security events); root + noisy libs: WARNING
+    app.logger.handlers = [handler, _file_handler]
+    app.logger.setLevel(logging.INFO)
+    app.logger.propagate = False
+
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(logging.WARNING)
+
+    for _noisy in ("werkzeug", "urllib3", "requests", "sqlalchemy.engine", "sqlalchemy.pool"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+
+
     # --- DB engine only (no Table metadata) ---
     def db_url() -> str:
         return (
@@ -241,6 +243,9 @@ def create_app():
         payload = request.get_json(silent=True) or {}
         email = (payload.get("email") or "").strip().lower()
         login = (payload.get("login") or "").strip()
+        RESERVED_LOGINS = {"plugins", "watermarks", "sources", "system", "admin", "root"}
+        if login or email in RESERVED_LOGINS:
+            return jsonify({"error": "Restricted Username"}), 409
         password = payload.get("password") or ""
         if not email or not login or not password:
             return jsonify({"error": "email, login, and password are required"}), 400
