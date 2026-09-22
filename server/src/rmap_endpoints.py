@@ -9,7 +9,7 @@ import secrets
 import threading
 from pathlib import Path
 
-from flask import jsonify, request, send_file
+from flask import jsonify, request
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError
@@ -230,29 +230,7 @@ def register_rmap(app) -> None:
             return jsonify({"error": "too many versions for this identity"}), 429
         return jsonify(resp2)
 
-    @app.get("/api/get-version/<link>")
-    def get_version_by_link(link: str):
-        try:
-            with engine.connect() as conn:
-                row = conn.execute(
-                    text("SELECT path FROM Versions WHERE link = :l LIMIT 1"),
-                    {"l": link},
-                ).first()
-        except Exception:
-            # log it but don't show db errors to the public
-            app.logger.exception("get-version database error")
-            return jsonify({"error": "service unavailable"}), 503
-        if not row:
-            return jsonify({"error": "not found"}), 404
-        file_path = Path(row.path)
-        try:
-            file_path.resolve().relative_to(storage_dir)
-        except Exception:
-            return jsonify({"error": "invalid path"}), 500
-        if not file_path.exists():
-            return jsonify({"error": "file missing"}), 410
-        return send_file(file_path, mimetype="application/pdf",
-                         as_attachment=False, download_name=f"{link}.pdf", max_age=0)
+    # get-version/<link> is served by server.py; don't register it twice here.
 
     if _RMAP_IMPORTED:
         @app.errorhandler(RMAPError)

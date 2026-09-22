@@ -7,7 +7,7 @@ import shutil
 import datetime as dt
 from pathlib import Path
 from functools import wraps
-import logging, time, uuid, json
+import logging, time, uuid, json, threading
 
 from flask import Flask, jsonify, request, g, send_file
 from werkzeug.utils import secure_filename
@@ -164,6 +164,56 @@ def create_app():
             app.config["_ENGINE"] = eng
         return eng
 
+    # --- Login throttle (slows password guessing) ---
+    # kept in memory on purpose: we run a single gunicorn worker, so a dict is
+    # enough and it adds no new dependency.
+    LOGIN_FAIL_LIMIT = int(os.environ.get("LOGIN_FAIL_LIMIT", "5"))    # per ip+account
+    LOGIN_IP_LIMIT = int(os.environ.get("LOGIN_IP_LIMIT", "20"))       # per ip (spraying)
+    LOGIN_WINDOW = int(os.environ.get("LOGIN_WINDOW_SECONDS", "300"))
+    LOGIN_LOCKOUT = int(os.environ.get("LOGIN_LOCKOUT_SECONDS", "300"))
+
+    _login_fails: dict = {}          # key -> (fails, window_start, locked_until)
+    _login_fails_lock = threading.Lock()
+
+    def _client_ip() -> str:
+        # deliberately NOT X-Forwarded-For: the caller controls that header and
+        # could send a new one each try to walk around the throttle.
+        return request.remote_addr or "unknown"
+
+    def _login_keys(email: str):
+        ip = _client_ip()
+        return [(f"ip:{ip}", LOGIN_IP_LIMIT), (f"acct:{ip}|{email}", LOGIN_FAIL_LIMIT)]
+
+    def _login_locked_for(keys) -> int:
+        now = time.time()
+        with _login_fails_lock:
+            waits = [int(_login_fails[k][2] - now) for k, _ in keys
+                     if k in _login_fails and _login_fails[k][2] > now]
+        return max(waits) if waits else 0
+
+    def _login_note_fail(keys) -> None:
+        now = time.time()
+        with _login_fails_lock:
+            if len(_login_fails) > 10000:   # keep memory bounded
+                for k, v in list(_login_fails.items()):
+                    if v[2] < now and now - v[1] > LOGIN_WINDOW:
+                        _login_fails.pop(k, None)
+            for key, limit in keys:
+                fails, start, until = _login_fails.get(key, (0, now, 0.0))
+                if now - start > LOGIN_WINDOW:
+                    fails, start = 0, now
+                fails += 1
+                if fails >= limit:
+                    until, fails, start = now + LOGIN_LOCKOUT, 0, now
+                _login_fails[key] = (fails, start, until)
+
+    def _login_note_success(keys) -> None:
+        # clear the account counter only; the per-ip one still decays on its own
+        with _login_fails_lock:
+            for key, _ in keys:
+                if key.startswith("acct:"):
+                    _login_fails.pop(key, None)
+
     # --- Helpers ---
     def _serializer():
         return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="tatou-auth")
@@ -280,6 +330,16 @@ def create_app():
         if not email or not password:
             return jsonify({"error": "email and password are required"}), 400
 
+        # refuse early if this source has been guessing passwords
+        keys = _login_keys(email)
+        wait = _login_locked_for(keys)
+        if wait:
+            _json_log(app.logger, logging.WARNING, "login_throttled",
+                      ts=int(time.time()), ip=_client_ip(), email=email, retry_after=wait)
+            resp = jsonify({"error": "too many failed login attempts, try again later"})
+            resp.headers["Retry-After"] = str(wait)
+            return resp, 429
+
         try:
             with get_engine().connect() as conn:
                 row = conn.execute(
@@ -290,10 +350,12 @@ def create_app():
             return jsonify({"error": "Failed to process DB request"}), 503
 
         if not row or not check_password_hash(row.hpassword, password):
+            _login_note_fail(keys)
             _json_log(app.logger, logging.WARNING, "login_fail",
                         ts=int(time.time()), ip=request.remote_addr, email=email)
             return jsonify({"error": "invalid credentials"}), 401
 
+        _login_note_success(keys)
         token = _serializer().dumps({"uid": int(row.id), "login": row.login, "email": row.email})
         _json_log(app.logger, logging.INFO, "login_ok",
                 ts=int(time.time()), ip=request.remote_addr, user=int(row.id), login=row.login)
