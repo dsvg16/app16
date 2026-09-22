@@ -9,7 +9,6 @@ This module exposes:
 - :func:`explore_pdf`: build a lightweight JSON-serializable tree of PDF
   nodes with deterministic identifiers ("name nodes").
 - :func:`apply_watermark`: run a concrete watermarking method on a PDF.
-- :func:`apply_watermark`: run a concrete watermarking method on a PDF.
 - :func:`read_watermark`: recover a secret using a concrete method.
 - :func:`register_method` / :func:`get_method`: registry helpers.
 
@@ -44,6 +43,7 @@ from watermarking_method import (
 from add_after_eof import AddAfterEOF
 #from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
 from tiled_visible_watermark import TiledVisibleWatermark
+from honey_microspacing_watermark import HoneyMicrospacingWatermark
 
 # --------------------
 # Method registry
@@ -52,7 +52,8 @@ from tiled_visible_watermark import TiledVisibleWatermark
 METHODS: Dict[str, WatermarkingMethod] = {
     AddAfterEOF.name: AddAfterEOF(),
     #UnsafeBashBridgeAppendEOF.name: UnsafeBashBridgeAppendEOF(),
-    TiledVisibleWatermark.name: TiledVisibleWatermark()
+    TiledVisibleWatermark.name: TiledVisibleWatermark(),
+    HoneyMicrospacingWatermark.name: HoneyMicrospacingWatermark(),
 }
 """Registry of available watermarking methods.
 
@@ -104,8 +105,8 @@ def is_watermarking_applicable(
     method: str | WatermarkingMethod,
     pdf: PdfSource,
     position: str | None = None,
-) -> bytes:
-    """Apply a watermark using the specified method and return new PDF bytes."""
+) -> bool:
+    """Check whether a watermarking method is applicable to the target PDF."""
     m = get_method(method)
     return m.is_watermark_applicable(pdf=pdf, position=position)
 
@@ -249,5 +250,5 @@ __all__ = [
     "apply_watermark",
     "read_watermark",
     "explore_pdf",
-    "is_watermarking_applicable"
+    "is_watermarking_applicable",
 ]
