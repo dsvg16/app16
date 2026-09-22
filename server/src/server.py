@@ -71,6 +71,7 @@ def create_app():
             "Referrer-Policy",
             "strict-origin-when-cross-origin",
         )
+        _log_request(response)
         return response
     def _log_request(resp):
         try:
