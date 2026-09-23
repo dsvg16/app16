@@ -59,6 +59,24 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+  monitor:
+    build:
+        context: monitor
+    environment:
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-tatou-2026}
+      - BRUTE_THRESHOLD=2
+      - BRUTE_WINDOW=${BRUTE_WINDOW}
+      - ALERT_COOLDOWN=${ALERT_COOLDOWN}
+      - DRY_RUN=${DRY_RUN}
+    volumes:
+      - user-files:/app/storage:ro
+    depends_on:
+      - server
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
 
 volumes:
   db-data:

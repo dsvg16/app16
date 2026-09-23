@@ -58,33 +58,6 @@ def create_app():
         "/api/rmap-initiate", "/api/rmap-get-link"
     }
 
-    # ------- Install JSON logger & request logging ---- #
-    handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter())
-
-    #File handler (shared volume for SIEM)
-    #_log_file = Path(app.config["STORAGE_DIR"]) / "server.log"
-    #_file_handler = logging.FileHandler(_log_file, encoding="utf-8")
-    #_file_handler.setFormatter(JsonFormatter())
-
-    # app logger: INFO (security events); root + noisy libs: WARNING
-    app.logger.handlers = [handler]
-    app.logger.setLevel(logging.INFO)
-    app.logger.propagate = False
-
-    #root = logging.getLogger()
-    #root.handlers = [handler]
-    #root.setLevel(logging.WARNING)
-
-    for _noisy in ("werkzeug", "urllib3", "requests", "sqlalchemy.engine", "sqlalchemy.pool"):
-        logging.getLogger(_noisy).setLevel(logging.WARNING)
-
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
-
     @app.before_request
     def _start_timer():
         g._t0 = time.time()
@@ -98,6 +71,7 @@ def create_app():
             "Referrer-Policy",
             "strict-origin-when-cross-origin",
         )
+        _log_request(response)
         return response
     def _log_request(resp):
         try:
@@ -145,6 +119,36 @@ def create_app():
 
     app.config["STORAGE_DIR"].mkdir(parents=True, exist_ok=True)
     app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024
+
+    STORAGE_ROOT = app.config["STORAGE_DIR"].resolve()
+
+    # ------- Install JSON logger & request logging ---- #
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter())
+
+    #File handler (shared volume for SIEM)
+    _log_file = Path(app.config["STORAGE_DIR"]) / "server.log"
+    _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
+    _file_handler.setFormatter(JsonFormatter())
+
+    # app logger: INFO (security events); root + noisy libs: WARNING
+    app.logger.handlers = [handler, _file_handler]
+    app.logger.setLevel(logging.INFO)
+    app.logger.propagate = False
+
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(logging.WARNING)
+
+    for _noisy in ("werkzeug", "urllib3", "requests", "sqlalchemy.engine", "sqlalchemy.pool"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+
 
     # --- DB engine only (no Table metadata) ---
     def db_url() -> str:
@@ -241,6 +245,29 @@ def create_app():
                 h.update(chunk)
         return h.hexdigest()
 
+    def _safe_storage_path(raw_path: str | Path) -> Path:
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = STORAGE_ROOT / candidate
+
+        # Do not allow symlinks anywhere in the path.
+        current = candidate
+        while current != STORAGE_ROOT and current != current.parent:
+            if current.is_symlink():
+                raise ValueError("symlink paths are not allowed")
+            current = current.parent
+
+        resolved = candidate.resolve(strict=False)
+
+        try:
+            resolved.relative_to(STORAGE_ROOT)
+        except ValueError as exc:
+            raise ValueError("path escapes storage root") from exc
+
+        if resolved != STORAGE_ROOT and resolved.is_symlink():
+            raise ValueError("symlink paths are not allowed")
+
+        return resolved
     # # --- Routes ---
 
     @app.route("/<path:filename>")
@@ -267,6 +294,9 @@ def create_app():
         payload = request.get_json(silent=True) or {}
         email = (payload.get("email") or "").strip().lower()
         login = (payload.get("login") or "").strip()
+        RESERVED_LOGINS = {"plugins", "watermarks", "sources", "system", "admin", "root"}
+        if login in RESERVED_LOGINS:
+            return jsonify({"error": "Restricted Username"}), 409
         password = payload.get("password") or ""
         if not email or not login or not password:
             return jsonify({"error": "email, login, and password are required"}), 400
@@ -345,13 +375,25 @@ def create_app():
         if not clean_filename:
             return jsonify({"error": "invalid filename"}), 400
 
+        content_length = request.content_length
+        if content_length is not None and content_length > app.config["MAX_CONTENT_LENGTH"]:
+            _json_log(
+                    app.logger,
+                    logging.WARNING,
+                    "upload_reject",
+                    ts=int(time.time()),
+                    ip=request.remote_addr,
+                    reason="request too large",
+                    size=content_length,
+                    user=int(g.user["id"]),
+            )
+            return jsonify({"error": "file too large"}), 413
         fname = file.filename
 
         #user_dir = app.config["STORAGE_DIR"] / "files" / g.user["login"]
         #Sanitize user login directory to prevent path traversal
-        safe_login = secure_filename(str(g.user["login"]))
+        safe_login = secure_filename(str(g.user["id"]))
         user_dir = app.config["STORAGE_DIR"] / "files" / safe_login
-        user_dir.mkdir(parents=True, exist_ok=True)
         user_dir.mkdir(parents=True, exist_ok=True)
 
         ts = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
@@ -958,10 +1000,12 @@ def create_app():
             with dest_path.open("wb") as f:
                 f.write(wm_bytes)
         except Exception as e:
-            return jsonify({"error": f"failed to write watermarked file: {e}"}), 500
+            return jsonify({"error": "Failed to write watermarked file"}), 500
 
         # link token = sha1(watermarked_file_name)
-        link_token = hashlib.sha1(candidate.encode("utf-8")).hexdigest()
+        #link_token = hashlib.sha1(candidate.encode("utf-8")).hexdigest()
+        #change it to random instead of sha1
+        link_token = secrets.token_urlsafe(32)
 
         try:
             with get_engine().begin() as conn:
@@ -1005,78 +1049,78 @@ def create_app():
         }), 201
 
 
-    @app.post("/api/load-plugin")
-    @require_auth
-    def load_plugin():
-        """
-        Load a serialized Python class implementing WatermarkingMethod from
-        STORAGE_DIR/files/plugins/<filename>.{pkl|dill} and register it in wm_mod.METHODS.
-        Body: { "filename": "MyMethod.pkl", "overwrite": false }
-        """
-        payload = request.get_json(silent=True) or {}
-        filename = (payload.get("filename") or "").strip()
-        overwrite = bool(payload.get("overwrite", False))
+    # @app.post("/api/load-plugin")
+    # @require_auth
+    # def load_plugin():
+    #     """
+    #     Load a serialized Python class implementing WatermarkingMethod from
+    #     STORAGE_DIR/files/plugins/<filename>.{pkl|dill} and register it in wm_mod.METHODS.
+    #     Body: { "filename": "MyMethod.pkl", "overwrite": false }
+    #     """
+    #     payload = request.get_json(silent=True) or {}
+    #     filename = (payload.get("filename") or "").strip()
+    #     overwrite = bool(payload.get("overwrite", False))
 
-        if not filename:
-            return jsonify({"error": "filename is required"}), 400
+    #     if not filename:
+    #         return jsonify({"error": "filename is required"}), 400
 
-        # Check only trust plugin (whitelisting)
-        ALLOWED_PLUGINS = {
-            "eof_method": "add_after_eof.AddAfterEOF",
-        }
-        if filename not in ALLOWED_PLUGINS:
-            return jsonify({"error": "unauthorized or disallowed plugin"}), 403
+    #     # Check only trust plugin (whitelisting)
+    #     ALLOWED_PLUGINS = {
+    #         "eof_method": "add_after_eof.AddAfterEOF",
+    #     }
+    #     if filename not in ALLOWED_PLUGINS:
+    #         return jsonify({"error": "unauthorized or disallowed plugin"}), 403
 
-        # Locate the plugin in /storage/files/plugins (relative to STORAGE_DIR)
-        storage_root = Path(app.config["STORAGE_DIR"])
-        plugins_dir = storage_root / "files" / "plugins"
-        try:
-            plugins_dir.mkdir(parents=True, exist_ok=True)
-            plugin_path = plugins_dir / filename
-        except Exception as e:
-            return jsonify({"error": f"plugin path error: {e}"}), 500
+    #     # Locate the plugin in /storage/files/plugins (relative to STORAGE_DIR)
+    #     storage_root = Path(app.config["STORAGE_DIR"])
+    #     plugins_dir = storage_root / "files" / "plugins"
+    #     try:
+    #         plugins_dir.mkdir(parents=True, exist_ok=True)
+    #         plugin_path = plugins_dir / filename
+    #     except Exception as e:
+    #         return jsonify({"error": f"plugin path error: {e}"}), 500
 
-        #There's no 'safe' defined
-        if not plugin_path.exists():
-            return jsonify({"error": f"plugin file not found"}), 404
+    #     #There's no 'safe' defined
+    #     if not plugin_path.exists():
+    #         return jsonify({"error": "plugin file not found"}), 404
 
-        # Unpickle the object (dill if available; else std pickle)
-        try:
-            with plugin_path.open("rb") as f:
-                obj = _pickle.load(f)
-        except Exception as e:
-            return jsonify({"error": f"failed to deserialize plugin: {e}"}), 400
+    #     # Unpickle the object (dill if available; else std pickle)
+    #     try:
+    #         with plugin_path.open("rb") as f:
+    #             obj = _pickle.load(f)
+    #     except Exception as e:
+    #         return jsonify({"error": f"failed to deserialize plugin: {e}"}), 400
 
-        # Accept: class object, or instance (we'll promote instance to its class)
-        if isinstance(obj, type):
-            cls = obj
-        else:
-            cls = obj.__class__
+    #     # Accept: class object, or instance (we'll promote instance to its class)
+    #     if isinstance(obj, type):
+    #         cls = obj
+    #     else:
+    #         cls = obj.__class__
 
-        # Determine method name for registry
-        method_name = getattr(cls, "name", getattr(cls, "__name__", None))
-        if not method_name or not isinstance(method_name, str):
-            return jsonify({"error": "plugin class must define a readable name (class.__name__ or .name)"}), 400
+    #     # Determine method name for registry
+    #     method_name = getattr(cls, "name", getattr(cls, "__name__", None))
+    #     if not method_name or not isinstance(method_name, str):
+    #         return jsonify({"error": "plugin class must define a readable name (class.__name__ or .name)"}), 400
 
-        # Validate interface: either subclass of WatermarkingMethod or duck-typing
-        has_api = all(hasattr(cls, attr) for attr in ("add_watermark", "read_secret"))
-        if WatermarkingMethod is not None:
-            is_ok = issubclass(cls, WatermarkingMethod) and has_api
-        else:
-            is_ok = has_api
-        if not is_ok:
-            return jsonify({"error": "plugin does not implement WatermarkingMethod API (add_watermark/read_secret)"}), 400
+    #     # Validate interface: either subclass of WatermarkingMethod or duck-typing
+    #     has_api = all(hasattr(cls, attr) for attr in ("add_watermark", "read_secret"))
+    #     if WatermarkingMethod is not None:
+    #         is_ok = issubclass(cls, WatermarkingMethod) and has_api
+    #     else:
+    #         is_ok = has_api
+    #     if not is_ok:
+    #         return jsonify({"error": "plugin does not implement WatermarkingMethod API (add_watermark/read_secret)"}), 400
 
-        # Register the class (not an instance) so you can instantiate as needed later
-        WMUtils.METHODS[method_name] = cls()
+    #     # Register the class (not an instance) so you can instantiate as needed later
+    #     WMUtils.METHODS[method_name] = cls()
 
-        return jsonify({
-            "loaded": True,
-            "filename": filename,
-            "registered_as": method_name,
-            "class_qualname": f"{getattr(cls, '__module__', '?')}.{getattr(cls, '__qualname__', cls.__name__)}",
-            "methods_count": len(WMUtils.METHODS)
-        }), 201
+    #     return jsonify({
+    #         "loaded": True,
+    #         "filename": filename,
+    #         "registered_as": method_name,
+    #         "class_qualname": f"{getattr(cls, '__module__', '?')}.{getattr(cls, '__qualname__', cls.__name__)}",
+    #         "methods_count": len(WMUtils.METHODS)
+    #     }), 201
 
 
 
@@ -1173,6 +1217,10 @@ def create_app():
             "method": method,
             "position": position
         }), 201
+
+    @app.errorhandler(413)
+    def request_entity_too_large(_error):
+        return jsonify({"error": "file too large"}), 413
 
     register_rmap(app)
     return app
