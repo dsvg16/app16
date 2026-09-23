@@ -111,7 +111,11 @@ def test_valid_pgp_wrong_shape_gives_400_not_500(app, keydir):
     reason="needs a live MariaDB; covered by the docker compose deploy check",
 )
 def test_full_handshake_issues_a_working_link(app, keydir):
-    from tiled_visible_watermark import TiledVisibleWatermark
+    # RMAP must hand out the LAYERED mark, so read it back with the layered method
+    from layered_watermark import LayeredWatermark
+    import rmap_endpoints
+
+    assert rmap_endpoints.WM_METHOD == "layered", "RMAP must use the layered method"
 
     tc = app.test_client()
     c = _client(keydir)
@@ -123,9 +127,9 @@ def test_full_handshake_issues_a_working_link(app, keydir):
     dl = tc.get(f"/api/get-version/{link}")
     assert dl.status_code == 200
     assert dl.data.startswith(b"%PDF-")
-    # the served copy must carry this identity + this handshake
-    recovered = TiledVisibleWatermark().read_secret(dl.data, "unit-test-wm-key")
-    assert recovered.startswith(f"{IDENTITY}:")
+    # the served copy must carry this identity + this handshake, readable only with our key
+    recovered = LayeredWatermark().read_secret(dl.data, "unit-test-wm-key")
+    assert recovered == f"{IDENTITY}:{link}"
 
 
 # error / security cases
