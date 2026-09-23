@@ -44,6 +44,7 @@ from add_after_eof import AddAfterEOF
 #from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
 from tiled_visible_watermark import TiledVisibleWatermark
 from honey_microspacing_watermark import HoneyMicrospacingWatermark
+from coordinate_lsb import CoordinateLSB
 
 # --------------------
 # Method registry
@@ -54,6 +55,7 @@ METHODS: Dict[str, WatermarkingMethod] = {
     #UnsafeBashBridgeAppendEOF.name: UnsafeBashBridgeAppendEOF(),
     TiledVisibleWatermark.name: TiledVisibleWatermark(),
     HoneyMicrospacingWatermark.name: HoneyMicrospacingWatermark(),
+    CoordinateLSB.name: CoordinateLSB(),
 }
 """Registry of available watermarking methods.
 
