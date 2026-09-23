@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 import pikepdf
 import pymupdf
@@ -15,6 +16,7 @@ from watermarking_method import InvalidKeyError, SecretNotFoundError
 SECRET = "group16::alice"
 KEY = "unit-test-key"
 DECOY_MAGIC = b"\n%%WM-ADD-AFTER-EOF:v1\n"
+REAL_PDF = Path(__file__).resolve().parents[2] / "Group_16.pdf"
 
 
 @pytest.fixture(scope="module")
@@ -137,3 +139,19 @@ def test_position_is_opacity(blank_pdf: bytes):
 def test_input_validation(blank_pdf: bytes, secret, key):
     with pytest.raises(ValueError):
         LayeredWatermark().add_watermark(blank_pdf, secret, key)
+
+
+@pytest.mark.skipif(not REAL_PDF.is_file(), reason="Group_16.pdf not at repo root")
+def test_roundtrip_on_the_real_group16_pdf():
+    # the exact PDF RMAP hands out: image-heavy, so the coordinate layer is
+    # skipped and the mark has to survive on the remaining layers alone
+    wm = LayeredWatermark()
+    marked = wm.add_watermark(str(REAL_PDF), SECRET, KEY)
+    assert wm.read_secret(marked, KEY) == SECRET
+
+    text = page_text(marked)
+    assert "WMK2:" in text and "WM-STEALTH-v2:" in text
+    assert DECOY_MAGIC in marked
+    assert SECRET.encode() not in marked
+    with pytest.raises(InvalidKeyError):
+        wm.read_secret(marked, "wrong-key")
