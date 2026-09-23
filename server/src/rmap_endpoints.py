@@ -29,7 +29,10 @@ except Exception:  # library not installed yet
     _RMAP_IMPORTED = False
 
 
-WM_METHOD = "tiled-visible"
+# RMAP hands out the teacher's PDF with our STRONGEST method (defence-in-depth:
+# coordinate-LSB + tiled-visible + honey-microspacing + decoy), so a leaked copy
+# is hardest to scrub before Phase II.
+WM_METHOD = "layered"
 SYSTEM_USER_LOGIN = "rmap-system"
 SYSTEM_USER_EMAIL = "rmap-system@tatou.local"
 # cap versions per identity so nobody can fill the disk
