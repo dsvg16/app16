@@ -45,6 +45,7 @@ from add_after_eof import AddAfterEOF
 from tiled_visible_watermark import TiledVisibleWatermark
 from honey_microspacing_watermark import HoneyMicrospacingWatermark
 from coordinate_lsb import CoordinateLSB
+from layered_watermark import LayeredWatermark
 
 # --------------------
 # Method registry
@@ -56,6 +57,7 @@ METHODS: Dict[str, WatermarkingMethod] = {
     TiledVisibleWatermark.name: TiledVisibleWatermark(),
     HoneyMicrospacingWatermark.name: HoneyMicrospacingWatermark(),
     CoordinateLSB.name: CoordinateLSB(),
+    LayeredWatermark.name: LayeredWatermark(),
 }
 """Registry of available watermarking methods.
 
