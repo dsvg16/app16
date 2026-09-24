@@ -19,11 +19,25 @@ import watermarking_utils as WMUtils
 
 try:
     from rmap import RMAPServer, RMAPError
+    from rmap.crypto import load_key
+    from rmap.exceptions import ProtocolStateException
+    from rmap_paired_relay import (
+        PairedRelay, InvalidRelayMessage, TargetError, paired_targets,
+    )
     _RMAP_IMPORTED = True
 except Exception:  # library not installed yet
     RMAPServer = None
 
     class RMAPError(Exception):
+        pass
+
+    class ProtocolStateException(RMAPError):
+        pass
+
+    class InvalidRelayMessage(Exception):
+        pass
+
+    class TargetError(Exception):
         pass
 
     _RMAP_IMPORTED = False
@@ -102,6 +116,50 @@ def register_rmap(app) -> None:
             app.logger.warning("RMAP disabled: key material not configured")
     else:
         app.logger.warning("RMAP disabled: rmap library not installed")
+
+    paired_relay = None
+    if rmap_server is not None and os.environ.get("RMAP_PAIRED_RELAY") == "1":
+        try:
+            targets = paired_targets(
+                include_group32=os.environ.get("RMAP_PAIR_30_32", "1") == "1"
+            )
+            target_keys = {}
+            for group in sorted(set(targets.values())):
+                key_path = Path(clients) / f"{group}.asc"
+                if key_path.is_file():
+                    target_keys[group] = load_key(key_path)
+                else:
+                    app.logger.warning("paired relay missing public key for %s", group)
+            targets = {
+                visitor: target for visitor, target in targets.items()
+                if target in target_keys
+            }
+            if not targets:
+                raise ValueError("no paired targets have public keys")
+            paired_relay = PairedRelay(
+                own_private_key=rmap_server.serverPrivateKey,
+                passphrase=os.environ.get("RMAP_KEY_PASSPHRASE") or None,
+                target_public_keys=target_keys,
+                allowed_identities=rmap_server.identities,
+                targets=targets,
+            )
+            app.logger.info("RMAP paired-group relay enabled")
+        except (OSError, ValueError, RMAPError) as exc:
+            app.logger.warning("RMAP paired-group relay disabled: %s", exc)
+
+    def _store_paired_capture(target_group: str, link: str, data: bytes) -> None:
+        if not re.fullmatch(r"Group_\d{2}", target_group):
+            raise ValueError("invalid target group")
+        capture_dir = storage_dir / "rmap_paired_captures" / target_group
+        capture_dir.mkdir(parents=True, exist_ok=True)
+        destination = capture_dir / f"{link}.pdf"
+        temporary = capture_dir / f".{link}.{secrets.token_hex(6)}.tmp"
+        try:
+            temporary.write_bytes(data)
+            temporary.chmod(0o600)
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     # helpers
     def _ensure_source_document(conn) -> int:
@@ -199,6 +257,15 @@ def register_rmap(app) -> None:
         if pending is not None and len(pending) >= MAX_PENDING_HANDSHAKES:
             return jsonify({"error": "too many pending handshakes"}), 429
         payload = request.get_json(force=True, silent=True) or {}
+        if paired_relay is not None:
+            try:
+                relayed_response = paired_relay.initiate(payload)
+                if relayed_response is not None:
+                    return jsonify(relayed_response)
+            except TargetError:
+                app.logger.warning("paired initiate failed; using the local RMAP server")
+            except (RMAPError, InvalidRelayMessage, KeyError, ValueError, TypeError):
+                return jsonify({"error": "rmap protocol error"}), 400
         try:
             with handshake_lock:
                 _identity, resp1 = rmap_server.receiveMsg1(payload)
@@ -216,9 +283,24 @@ def register_rmap(app) -> None:
         if not _source_ready():
             return jsonify({"error": "RMAP source document unavailable"}), 503
         payload = request.get_json(force=True, silent=True) or {}
+        relay_result = None
         try:
             with handshake_lock:
                 identity, link, resp2 = rmap_server.receiveMsg2(payload)
+        except ProtocolStateException:
+            if paired_relay is None:
+                return jsonify({"error": "rmap protocol error"}), 400
+            try:
+                relay_result = paired_relay.finish(payload)
+            except TargetError:
+                app.logger.warning("paired target could not finish a relayed handshake")
+                return jsonify({"error": "service unavailable"}), 503
+            except (RMAPError, InvalidRelayMessage, KeyError, ValueError, TypeError):
+                return jsonify({"error": "rmap protocol error"}), 400
+            if relay_result is None:
+                return jsonify({"error": "rmap protocol error"}), 400
+            identity, link = relay_result.identity, relay_result.link
+            resp2 = rmap_server.encrypt_for_identity({"result": link}, identity)
         except (RMAPError, KeyError, ValueError, TypeError):
             return jsonify({"error": "rmap protocol error"}), 400
         # make + save the version before returning the link (spec 5.5).
@@ -231,6 +313,20 @@ def register_rmap(app) -> None:
             return jsonify({"error": "service unavailable"}), 503
         if not created:
             return jsonify({"error": "too many versions for this identity"}), 429
+        if relay_result is not None:
+            if relay_result.target_pdf is not None:
+                try:
+                    _store_paired_capture(
+                        relay_result.target_group, link, relay_result.target_pdf
+                    )
+                    app.logger.info(
+                        "paired PDF captured from %s for %s", relay_result.target_group,
+                        identity,
+                    )
+                except OSError:
+                    app.logger.exception("could not store paired PDF capture")
+            else:
+                app.logger.warning("paired target issued a link, but its PDF was unavailable")
         return jsonify(resp2)
 
     # get-version/<link> is served by server.py; don't register it twice here.
