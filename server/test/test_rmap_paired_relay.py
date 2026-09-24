@@ -49,6 +49,7 @@ def protocol(tmp_path):
         "Group_02": generate_keypair("Group_02", "two@example.invalid"),
         "Group_04": generate_keypair("Group_04", "four@example.invalid"),
         "Group_14": generate_keypair("Group_14", "fourteen@example.invalid"),
+        "Group_34": generate_keypair("Group_34", "thirtyfour@example.invalid"),
     }
     for stem, key in keys.items():
         (tmp_path / f"{stem}_priv.asc").write_text(str(key))
@@ -57,19 +58,21 @@ def protocol(tmp_path):
     our_server = RMAPServer(tmp_path / "ours_pub.asc", tmp_path / "ours_priv.asc")
     targets = {}
     clients = {}
-    for group in ("Group_02", "Group_04", "Group_14"):
+    for group in ("Group_02", "Group_04", "Group_14", "Group_34"):
         our_server.loadIdentity(group, tmp_path / f"{group}_pub.asc")
         client = RMAPClient(
             group, tmp_path / f"{group}_priv.asc", tmp_path / "ours_pub.asc"
         )
         clients[group] = client
-    for group in ("Group_02", "Group_04"):
+    for group in ("Group_02", "Group_04", "Group_14", "Group_34"):
         target = RMAPServer(
             tmp_path / f"{group}_pub.asc", tmp_path / f"{group}_priv.asc"
         )
-        visitors = ("Group_04", "Group_14") if group == "Group_02" else ("Group_02",)
-        for visitor in visitors:
-            target.loadIdentity(visitor, tmp_path / f"{visitor}_pub.asc")
+        visitor = {
+            "Group_02": "Group_04", "Group_04": "Group_02",
+            "Group_14": "Group_34", "Group_34": "Group_14",
+        }[group]
+        target.loadIdentity(visitor, tmp_path / f"{visitor}_pub.asc")
         targets[group] = LocalTarget(target, group)
 
     relay = PairedRelay(
@@ -85,7 +88,8 @@ def protocol(tmp_path):
     "visitor,target", [
         ("Group_02", "Group_04"),
         ("Group_04", "Group_02"),
-        ("Group_14", "Group_02"),
+        ("Group_14", "Group_34"),
+        ("Group_34", "Group_14"),
     ]
 )
 def test_paired_capture_and_visitor_pickup(protocol, visitor, target):
@@ -135,7 +139,11 @@ def test_rejected_final_keeps_pending_session(protocol):
 
 
 @pytest.mark.parametrize(
-    "visitor,target", [("Group_02", "Group_04"), ("Group_14", "Group_02")]
+    "visitor,target", [
+        ("Group_02", "Group_04"),
+        ("Group_14", "Group_34"),
+        ("Group_34", "Group_14"),
+    ]
 )
 def test_flask_initiate_route_selects_the_pair(
     protocol, monkeypatch, visitor, target
@@ -143,7 +151,7 @@ def test_flask_initiate_route_selects_the_pair(
     clients, _our_server, relay, targets, keydir = protocol
     client_keys = keydir / "clients"
     client_keys.mkdir()
-    for group in ("Group_02", "Group_04", "Group_14"):
+    for group in ("Group_02", "Group_04", "Group_14", "Group_34"):
         (client_keys / f"{group}.asc").write_text(
             (keydir / f"{group}_pub.asc").read_text()
         )
@@ -155,7 +163,7 @@ def test_flask_initiate_route_selects_the_pair(
     monkeypatch.setattr(
         rmap_endpoints, "paired_targets", lambda include_group32: {
             "Group_02": "Group_04", "Group_04": "Group_02",
-            "Group_14": "Group_02",
+            "Group_14": "Group_34", "Group_34": "Group_14",
             "Group_06": "Group_08", "Group_08": "Group_06",
         }
     )
@@ -172,12 +180,13 @@ def test_flask_initiate_route_selects_the_pair(
 
 def test_pair_mapping_and_host_boundary():
     mapping = paired_targets()
-    assert len(mapping) == 15
-    assert all(mapping[mapping[visitor]] == visitor
-               for visitor in mapping if visitor != "Group_14")
+    assert len(mapping) == 16
+    assert set(mapping) == set(mapping.values())
+    assert all(mapping[mapping[visitor]] == visitor for visitor in mapping)
     assert mapping["Group_02"] == "Group_04"
     assert mapping["Group_04"] == "Group_02"
-    assert mapping["Group_14"] == "Group_02"
+    assert mapping["Group_14"] == "Group_34"
+    assert mapping["Group_34"] == "Group_14"
     assert "Group_16" not in mapping
     assert mapping["Group_26"] == "Group_28"
     assert mapping["Group_28"] == "Group_26"
@@ -185,5 +194,6 @@ def test_pair_mapping_and_host_boundary():
     assert mapping["Group_32"] == "Group_30"
     assert "Group_30" not in paired_targets(include_group32=False)
     assert CourseGroupHTTP("Group_04").host == "softsec-group-04.dsv.local.su.se"
+    assert CourseGroupHTTP("Group_34").host == "softsec-group-34.dsv.local.su.se"
     with pytest.raises(ValueError):
         CourseGroupHTTP("Group_05")

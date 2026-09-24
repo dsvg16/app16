@@ -26,7 +26,7 @@ class NoRedirects(HTTPRedirectHandler):
 
 
 def paired_targets(include_group32: bool = True) -> dict[str, str]:
-    """Neighboring pairs, with Group 14 routed to 02 and our Group 16 excluded."""
+    """Pair every external even group, with 14↔34 in place of our Group 16."""
     pairs = [(number, number + 2) for number in range(2, 30, 4)
              if number != 14]
     if include_group32:
@@ -36,9 +36,8 @@ def paired_targets(include_group32: bool = True) -> dict[str, str]:
         a, b = f"Group_{first:02d}", f"Group_{second:02d}"
         mapping[a] = b
         mapping[b] = a
-    # Group 02 can serve as a target for both 04 and 14 while visitors from
-    # Group 02 still have exactly one target: Group 04.
-    mapping["Group_14"] = "Group_02"
+    mapping["Group_14"] = "Group_34"
+    mapping["Group_34"] = "Group_14"
     return mapping
 
 
@@ -63,11 +62,11 @@ class CourseGroupHTTP:
     """HTTP transport confined to one paired course host on port 5000 or 8000."""
 
     def __init__(self, target_group: str, timeout: float = 5.0):
-        if not re.fullmatch(r"Group_(?:0[2-8]|1[0-9]|2[0-9]|3[02])", target_group):
+        if not re.fullmatch(r"Group_\d{2}", target_group):
             raise ValueError("invalid course group")
         number = int(target_group.split("_")[1])
-        if number % 2:
-            raise ValueError("target group must be even")
+        if not 2 <= number <= 34 or number % 2:
+            raise ValueError("target group must be an even course group from 02 to 34")
         self.host = f"softsec-group-{number:02d}.dsv.local.su.se"
         self.timeout = timeout
         self.port: int | None = None
