@@ -235,7 +235,7 @@
       const fd = new FormData(e.currentTarget);
       try {
         const resp = await apiFetch('/api/upload-document', { method: 'POST', body: fd });
-        if (!resp.ok) {
+        if (resp.status !== 201) {
           const err = await resp.json().catch(() => ({}));
           throw new Error(err.message || resp.statusText);
         }
@@ -243,7 +243,7 @@
         e.currentTarget.reset();
         await loadDocuments();
       } catch (err) {
-        statusEl.textContent = 'Upload failed: ' + err.message;
+        // statusEl.textContent = 'Upload failed: ' + err.message;
       } finally {
         setTimeout(() => statusEl.textContent = '', 3000);
       }

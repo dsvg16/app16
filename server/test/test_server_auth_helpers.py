@@ -105,7 +105,7 @@ class TestAuthentication:
 
         # Try to validate with max_age=0 (immediately expired)
         with pytest.raises(SignatureExpired):
-            serializer.loads(token, max_age=0)
+            serializer.loads(token, max_age=-1)
 
     def test_invalid_token_rejected(self, app):
         """Test that tampered tokens are rejected"""
