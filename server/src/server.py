@@ -816,7 +816,7 @@ def create_app():
             document_id = (
                 request.args.get("id")
                 or request.args.get("documentid")
-                or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
+                or ((request.get_json(silent=True) or {}).get("id") if request.is_json else None)
             )
         try:
             doc_id = int(document_id)
@@ -893,7 +893,7 @@ def create_app():
             document_id = (
                 request.args.get("id")
                 or request.args.get("documentid")
-                or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
+                or ((request.get_json(silent=True) or {}).get("id") if request.is_json else None)
             )
         try:
             doc_id = document_id
@@ -1144,7 +1144,7 @@ def create_app():
             document_id = (
                 request.args.get("id")
                 or request.args.get("documentid")
-                or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
+                or ((request.get_json(silent=True) or {}).get("id") if request.is_json else None)
             )
         try:
             doc_id = document_id
