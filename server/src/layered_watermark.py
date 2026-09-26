@@ -34,6 +34,7 @@ except ImportError:
 import wm_crypto
 from coordinate_lsb import CoordinateLSB
 from honey_microspacing_watermark import HoneyMicrospacingWatermark
+from robust_dct import RobustDCT
 from tiled_visible_watermark import TiledVisibleWatermark
 from watermarking_method import (
     InvalidKeyError,
@@ -56,6 +57,7 @@ class LayeredWatermark(WatermarkingMethod):
         self._coord = CoordinateLSB()
         self._tiled = TiledVisibleWatermark()
         self._honey = HoneyMicrospacingWatermark()
+        self._robust = RobustDCT()
 
     @staticmethod
     def get_usage() -> str:
@@ -110,6 +112,16 @@ class LayeredWatermark(WatermarkingMethod):
         finally:
             doc.close()
 
+        # Robust image layer: survives JPEG recompression / re-encoding that
+        # wipes the text-plane layers. Runs last (its pikepdf save would drop a
+        # post-EOF trailer, so it must precede the decoy append) and is
+        # best-effort: a PDF with no usable image simply keeps the other layers.
+        try:
+            if self._robust.is_watermark_applicable(out):
+                out = self._robust.add_watermark(out, secret, key)
+        except (WatermarkingError, ValueError):
+            pass
+
         if not out.endswith(b"\n"):
             out += b"\n"
         return out + self._honey._DECOY_MAGIC + self._honey._build_decoy_trailer(secret, key) + b"\n"
@@ -119,6 +131,15 @@ class LayeredWatermark(WatermarkingMethod):
             raise ValueError("Key must be a non-empty string")
         data = load_pdf_bytes(pdf)
         wrong_key = False
+
+        # Try the robust image layer first: it is the one most likely to have
+        # survived a lossy attack that stripped the text-plane layers.
+        try:
+            return self._robust.read_secret(data, key)
+        except InvalidKeyError:
+            wrong_key = True
+        except (SecretNotFoundError, WatermarkingError):
+            pass
 
         try:
             return self._coord.read_secret(data, key)
