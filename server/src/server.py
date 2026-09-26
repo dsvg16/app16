@@ -295,7 +295,7 @@ def create_app():
         email = (payload.get("email") or "").strip().lower()
         login = (payload.get("login") or "").strip()
         RESERVED_LOGINS = {"plugins", "watermarks", "sources", "system", "admin", "root"}
-        if login in RESERVED_LOGINS:
+        if login.lower() in RESERVED_LOGINS:
             return jsonify({"error": "Restricted Username"}), 409
         password = payload.get("password") or ""
         if not email or not login or not password:
@@ -816,7 +816,7 @@ def create_app():
             document_id = (
                 request.args.get("id")
                 or request.args.get("documentid")
-                or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
+                or ((request.get_json(silent=True) or {}).get("id") if request.is_json else None)
             )
         try:
             doc_id = int(document_id)
@@ -893,7 +893,7 @@ def create_app():
             document_id = (
                 request.args.get("id")
                 or request.args.get("documentid")
-                or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
+                or ((request.get_json(silent=True) or {}).get("id") if request.is_json else None)
             )
         try:
             doc_id = document_id
@@ -1144,7 +1144,7 @@ def create_app():
             document_id = (
                 request.args.get("id")
                 or request.args.get("documentid")
-                or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
+                or ((request.get_json(silent=True) or {}).get("id") if request.is_json else None)
             )
         try:
             doc_id = document_id

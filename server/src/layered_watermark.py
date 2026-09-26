@@ -34,6 +34,7 @@ except ImportError:
 import wm_crypto
 from coordinate_lsb import CoordinateLSB
 from honey_microspacing_watermark import HoneyMicrospacingWatermark
+from robust_dct import RobustDCT
 from tiled_visible_watermark import TiledVisibleWatermark
 from watermarking_method import (
     InvalidKeyError,
@@ -46,7 +47,7 @@ from watermarking_method import (
 
 
 class LayeredWatermark(WatermarkingMethod):
-    name: Final[str] = "layered"
+    name: Final[str] = "Method 5"
 
     # (prefix, suffix, AEAD context) for each text layer
     _VISIBLE: Final = ("WMK2:", ":2KMW", b"wm:layered:visible:v1")
@@ -56,16 +57,18 @@ class LayeredWatermark(WatermarkingMethod):
         self._coord = CoordinateLSB()
         self._tiled = TiledVisibleWatermark()
         self._honey = HoneyMicrospacingWatermark()
+        self._robust = RobustDCT()
 
     @staticmethod
     def get_usage() -> str:
-        return (
-            "Three layers, each with an AES-GCM-encrypted secret: coordinate-LSB "
-            "(invisible, when the PDF has enough text), a faint tiled visible token, "
-            "and invisible micro-text plus a decoy trailer. Reading succeeds if any "
-            "layer survives. position (optional): visible-layer opacity percent 1-100 "
-            "(default 10)."
-        )
+        # return (
+        #     "Three layers, each with an AES-GCM-encrypted secret: coordinate-LSB "
+        #     "(invisible, when the PDF has enough text), a faint tiled visible token, "
+        #     "and invisible micro-text plus a decoy trailer. Reading succeeds if any "
+        #     "layer survives. position (optional): visible-layer opacity percent 1-100 "
+        #     "(default 10)."
+        # )
+        return "Method no 5"
 
     def is_watermark_applicable(self, pdf: PdfSource, position: str | None = None) -> bool:
         return self._tiled.is_watermark_applicable(pdf, position)
@@ -107,6 +110,16 @@ class LayeredWatermark(WatermarkingMethod):
         finally:
             doc.close()
 
+        # Robust image layer: survives JPEG recompression / re-encoding that
+        # wipes the text-plane layers. Runs last (its pikepdf save would drop a
+        # post-EOF trailer, so it must precede the decoy append) and is
+        # best-effort: a PDF with no usable image simply keeps the other layers.
+        try:
+            if self._robust.is_watermark_applicable(out):
+                out = self._robust.add_watermark(out, secret, key)
+        except (WatermarkingError, ValueError):
+            pass
+
         if not out.endswith(b"\n"):
             out += b"\n"
         return out + self._honey._DECOY_MAGIC + self._honey._build_decoy_trailer(secret, key) + b"\n"
@@ -117,11 +130,20 @@ class LayeredWatermark(WatermarkingMethod):
         data = load_pdf_bytes(pdf)
         wrong_key = False
 
+        # Try the robust image layer first: it is the one most likely to have
+        # survived a lossy attack that stripped the text-plane layers.
+        try:
+            return self._robust.read_secret(data, key)
+        except InvalidKeyError:
+            wrong_key = True
+        except (SecretNotFoundError, WatermarkingError):
+            pass
+
         try:
             return self._coord.read_secret(data, key)
         except InvalidKeyError:
             wrong_key = True
-        except WatermarkingError:
+        except (SecretNotFoundError, WatermarkingError):
             pass
 
         try:

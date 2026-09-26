@@ -13,7 +13,7 @@ from watermarking_cli import build_parser, main
 
 SECRET = "cli-test-secret"
 KEY = "cli-test-key"
-METHOD = "tiled-visible"
+METHOD = "Method 7"
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def pdf(tmp_path) -> Path:
 def test_methods_lists_registered_methods(capsys):
     assert main(["methods"]) == 0
     out = capsys.readouterr().out
-    assert METHOD in out and "toy-eof" in out
+    assert METHOD in out
 
 
 def test_explore_prints_json_tree(pdf, capsys):

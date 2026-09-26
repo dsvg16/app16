@@ -39,7 +39,7 @@ def method() -> TiledVisibleWatermark:
 
 
 def test_registered():
-    assert WM.METHODS.get("tiled-visible").__class__ is TiledVisibleWatermark
+    assert WM.METHODS.get("Method 7").__class__ is TiledVisibleWatermark
 
 
 def test_applicable(method, pdf_bytes):

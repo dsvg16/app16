@@ -54,7 +54,7 @@ class AddAfterEOF(WatermarkingMethod):
     using the caller-provided ``key`` (UTF‑8) and HMAC‑SHA256.
     """
 
-    name: Final[str] = "toy-eof"
+    name: Final[str] = "Method 1"
 
     # Constants
     _MAGIC: Final[bytes] = b"\n%%WM-ADD-AFTER-EOF:v1\n"
@@ -63,11 +63,11 @@ class AddAfterEOF(WatermarkingMethod):
     # ---------------------
     # Public API overrides
     # ---------------------
-    
+
     @staticmethod
     def get_usage() -> str:
-        return "Toy method that appends a watermark record after the PDF EOF. Position is ignored."
-
+        # return "Toy method that appends a watermark record after the PDF EOF. Position is ignored."
+        return "Method no 1"
     def add_watermark(
         self,
         pdf,
@@ -98,14 +98,14 @@ class AddAfterEOF(WatermarkingMethod):
             out += b"\n"
         out += self._MAGIC + payload + b"\n"
         return out
-        
+
     def is_watermark_applicable(
         self,
         pdf: PdfSource,
         position: str | None = None,
     ) -> bool:
         return True
-    
+
 
     def read_secret(self, pdf, key: str) -> str:
         """Extract the secret if present and authenticated by ``key``.
@@ -179,4 +179,3 @@ class AddAfterEOF(WatermarkingMethod):
 
 
 __all__ = ["AddAfterEOF"]
-

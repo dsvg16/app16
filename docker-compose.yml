@@ -37,6 +37,9 @@ services:
       - RMAP_KEY_PASSPHRASE=${RMAP_KEY_PASSPHRASE:-}
       - RMAP_WM_KEY=${RMAP_WM_KEY:-}
       - RMAP_SOURCE_PDF=/app/source/Group_16.pdf
+      # Course relay demonstration: pair even-numbered visiting and target groups.
+      - RMAP_PAIRED_RELAY=${RMAP_PAIRED_RELAY:-0}
+      - RMAP_PAIR_30_32=${RMAP_PAIR_30_32:-1}
     depends_on:
       db:
         condition: service_healthy

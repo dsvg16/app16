@@ -2,7 +2,7 @@ name: Tatou DevSecOps Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "irsad" ]
   pull_request:
     branches: [ "main" ]
 
@@ -101,7 +101,7 @@ jobs:
         run: |
           pytest server/test \
             --cov=server/src --cov-branch \
-            --cov-report=term-missing --cov-fail-under=50
+            --cov-report=term-missing --cov-fail-under=70
 
   container-scan:
     name: Build & Scan Container Image

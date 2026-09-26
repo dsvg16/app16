@@ -26,7 +26,7 @@ from watermarking_method import (
 
 class TiledVisibleWatermark(WatermarkingMethod):
 
-    name: Final[str] = "tiled-visible"
+    name: Final[str] = "Method 7"
 
     _PREFIX: Final[str] = "WMK1:"
     _SUFFIX: Final[str] = ":1KMW"
@@ -37,10 +37,11 @@ class TiledVisibleWatermark(WatermarkingMethod):
 
     @staticmethod
     def get_usage() -> str:
-        return (
-            "Tiles a faint copy of the secret across every page. "
-            "position (optional): integer opacity percent 1-100 (default 10)."
-        )
+        # return (
+        #     "Tiles a faint copy of the secret across every page. "
+        #     "position (optional): integer opacity percent 1-100 (default 10)."
+        # )
+        return "Method no 7"
 
     # helpers
     def _mac(self, secret: str, key: str) -> str:

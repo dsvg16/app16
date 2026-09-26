@@ -168,7 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_embed.add_argument("output", help="Output (watermarked) PDF path")
     p_embed.add_argument(
         "--method",
-        default="toy-eof",
+        default="Method 1",
         help="Watermarking method name (default: toy-eof)"
     )
     p_embed.add_argument("--position", help="Optional position hint", default=None)
@@ -195,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_extract.add_argument("input", help="Input PDF path (possibly watermarked)")
     p_extract.add_argument(
         "--method",
-        default="toy-eof",
+        default="Method 1",
         help="Watermarking method name (default: toy-eof)"
     )
 
@@ -241,4 +241,3 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
