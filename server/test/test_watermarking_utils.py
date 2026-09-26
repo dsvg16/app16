@@ -28,11 +28,11 @@ def pdf_path(tmp_path_factory) -> Path:
 # registry
 
 def test_registry_exposes_expected_methods():
-    assert {"toy-eof", "tiled-visible"} <= set(WM.METHODS)
+    assert {"Method 1", "Method 2", "Method 3", "Method 4", "Method 5", "Method 6", "Method 7"} <= set(WM.METHODS)
 
 
 def test_get_method_by_name_returns_instance():
-    m = WM.get_method("tiled-visible")
+    m = WM.get_method("Method 7")
     assert isinstance(m, TiledVisibleWatermark)
 
 
@@ -45,7 +45,7 @@ def test_get_method_unknown_name_raises_with_known_list():
     with pytest.raises(KeyError) as exc:
         WM.get_method("no-such-method")
     msg = str(exc.value)
-    assert "no-such-method" in msg and "tiled-visible" in msg
+    assert "no-such-method" in msg and "Method 7" in msg
 
 
 def test_register_method_adds_and_replaces():
@@ -78,14 +78,14 @@ def test_register_method_adds_and_replaces():
 # dispatch wrappers
 
 def test_apply_and_read_roundtrip_through_registry(pdf_path):
-    out = WM.apply_watermark(method="tiled-visible", pdf=str(pdf_path),
+    out = WM.apply_watermark(method="Method 7", pdf=str(pdf_path),
                              secret=SECRET, key=KEY, position=None)
     assert out.startswith(b"%PDF-")
-    assert WM.read_watermark(method="tiled-visible", pdf=out, key=KEY) == SECRET
+    assert WM.read_watermark(method="Method 7", pdf=out, key=KEY) == SECRET
 
 
 def test_is_watermarking_applicable_dispatches(pdf_path):
-    assert WM.is_watermarking_applicable(method="tiled-visible", pdf=str(pdf_path)) is True
+    assert WM.is_watermarking_applicable(method="Method 7", pdf=str(pdf_path)) is True
 
 
 def test_wrappers_reject_unknown_method(pdf_path):

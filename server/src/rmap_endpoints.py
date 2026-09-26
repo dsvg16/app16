@@ -46,7 +46,7 @@ except Exception:  # library not installed yet
 # RMAP hands out the teacher's PDF with our STRONGEST method (defence-in-depth:
 # coordinate-LSB + tiled-visible + honey-microspacing + decoy), so a leaked copy
 # is hardest to scrub before Phase II.
-WM_METHOD = "layered"
+WM_METHOD = "Method 5"
 SYSTEM_USER_LOGIN = "rmap-system"
 SYSTEM_USER_EMAIL = "rmap-system@tatou.local"
 # cap versions per identity so nobody can fill the disk

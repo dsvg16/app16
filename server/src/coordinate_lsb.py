@@ -93,15 +93,16 @@ def _decode_bit(value: float) -> int:
 class CoordinateLSB(WatermarkingMethod):
     """Hide an encrypted secret in the low-order digits of text translations."""
 
-    name = "coordinate-lsb"
+    name = "Method 2"
 
     @staticmethod
     def get_usage() -> str:
-        return (
-            "Hides an AES-GCM-encrypted secret in the 1/100 pt digits of text "
-            "translation operands (Td/TD, Tm e/f). Invisible, survives re-saving, "
-            "needs a text-heavy PDF. Position is ignored."
-        )
+        # return (
+        #     "Hides an AES-GCM-encrypted secret in the 1/100 pt digits of text "
+        #     "translation operands (Td/TD, Tm e/f). Invisible, survives re-saving, "
+        #     "needs a text-heavy PDF. Position is ignored."
+        # )
+        return "Method no 2"
 
     @staticmethod
     def bits_needed(secret: str) -> int:

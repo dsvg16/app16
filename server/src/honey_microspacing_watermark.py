@@ -28,7 +28,7 @@ from watermarking_method import (
 
 
 class HoneyMicrospacingWatermark(WatermarkingMethod):
-    name: Final[str] = "honey-microspacing"
+    name: Final[str] = "Method 3"
 
     # Context for HMAC key derivation
     _CONTEXT: Final[bytes] = b"wm:honey-micro:v1:"
@@ -44,9 +44,10 @@ class HoneyMicrospacingWatermark(WatermarkingMethod):
 
     @staticmethod
     def get_usage() -> str:
-        return (
-            "Dual-layer deceptive watermarking"
-        )
+        # return (
+        #     "Dual-layer deceptive watermarking"
+        # )
+        return "Method no 3"
 
     def is_watermark_applicable(
         self,

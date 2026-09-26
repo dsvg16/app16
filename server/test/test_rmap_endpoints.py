@@ -115,7 +115,7 @@ def test_full_handshake_issues_a_working_link(app, keydir):
     from layered_watermark import LayeredWatermark
     import rmap_endpoints
 
-    assert rmap_endpoints.WM_METHOD == "layered", "RMAP must use the layered method"
+    assert rmap_endpoints.WM_METHOD == "Method 5", "RMAP must use the layered method"
 
     tc = app.test_client()
     c = _client(keydir)

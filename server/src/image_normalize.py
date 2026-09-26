@@ -35,17 +35,18 @@ from watermarking_method import (
 class ImageNormalize(WatermarkingMethod):
     """Carry an encrypted tag in the low bit of an image's colour samples."""
 
-    name: Final[str] = "image-normalize"
+    name: Final[str] = "Method 4"
 
     # Marks the start of our payload so we can tell "no tag" from "wrong key".
     _MAGIC: Final[bytes] = b"IMG1"
 
     @staticmethod
     def get_usage() -> str:
-        return (
-            "Normalizes the largest embedded image to 8-bit DeviceRGB for "
-            "consistent rendering. Position is ignored."
-        )
+        # return (
+        #     "Normalizes the largest embedded image to 8-bit DeviceRGB for "
+        #     "consistent rendering. Position is ignored."
+        # )
+        return "Method no 4"
 
     # ------------------------------------------------------------------ #
     # Interface

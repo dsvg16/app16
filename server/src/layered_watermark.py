@@ -47,7 +47,7 @@ from watermarking_method import (
 
 
 class LayeredWatermark(WatermarkingMethod):
-    name: Final[str] = "layered"
+    name: Final[str] = "Method 5"
 
     # (prefix, suffix, AEAD context) for each text layer
     _VISIBLE: Final = ("WMK2:", ":2KMW", b"wm:layered:visible:v1")
@@ -61,13 +61,14 @@ class LayeredWatermark(WatermarkingMethod):
 
     @staticmethod
     def get_usage() -> str:
-        return (
-            "Three layers, each with an AES-GCM-encrypted secret: coordinate-LSB "
-            "(invisible, when the PDF has enough text), a faint tiled visible token, "
-            "and invisible micro-text plus a decoy trailer. Reading succeeds if any "
-            "layer survives. position (optional): visible-layer opacity percent 1-100 "
-            "(default 10)."
-        )
+        # return (
+        #     "Three layers, each with an AES-GCM-encrypted secret: coordinate-LSB "
+        #     "(invisible, when the PDF has enough text), a faint tiled visible token, "
+        #     "and invisible micro-text plus a decoy trailer. Reading succeeds if any "
+        #     "layer survives. position (optional): visible-layer opacity percent 1-100 "
+        #     "(default 10)."
+        # )
+        return "Method no 5"
 
     def is_watermark_applicable(self, pdf: PdfSource, position: str | None = None) -> bool:
         return self._tiled.is_watermark_applicable(pdf, position)

@@ -82,15 +82,16 @@ _D = _dct_matrix()
 class RobustDCT(WatermarkingMethod):
     """Redundant QIM watermark in mid-frequency image DCT coefficients."""
 
-    name: Final[str] = "robust-dct"
+    name: Final[str] = "Method 6"
 
     @staticmethod
     def get_usage() -> str:
-        return (
-            "Embeds the secret redundantly in mid-frequency 8x8 DCT coefficients "
-            "of the largest image's luminance, using QIM + majority vote. Survives "
-            "JPEG recompression and re-encoding. Position is ignored."
-        )
+        # return (
+        #     "Embeds the secret redundantly in mid-frequency 8x8 DCT coefficients "
+        #     "of the largest image's luminance, using QIM + majority vote. Survives "
+        #     "JPEG recompression and re-encoding. Position is ignored."
+        # )
+        return "Method no 6"
 
     # -- key / payload -------------------------------------------------- #
 
