@@ -5,8 +5,6 @@
 #   - list-versions needs a document id
 #   - a valid token returns only the rows the query hands back
 
-import os
-import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -18,17 +16,13 @@ from server import create_app
 
 
 @pytest.fixture
-def app():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.environ["STORAGE_DIR"] = tmpdir
-        os.environ["SECRET_KEY"] = "test-secret-key-12345"
-        os.environ["DB_HOST"] = "localhost"
-        os.environ["DB_USER"] = "test"
-        os.environ["DB_PASSWORD"] = "test"
-        os.environ["DB_NAME"] = "test"
-        app = create_app()
-        app.config["TESTING"] = True
-        yield app
+def app(monkeypatch, tmp_path):
+    
+    monkeypatch.setenv("STORAGE_DIR", str(tmp_path))
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-12345")
+    app = create_app()
+    app.config["TESTING"] = True
+    return app
 
 
 @pytest.fixture
