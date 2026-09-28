@@ -691,21 +691,18 @@ def create_app():
 
     # GET /api/get-version/<link>  → returns the watermarked PDF (inline)
     @app.get("/api/get-version/<link>")
-    @require_auth
     def get_version(link: str):
 
         try:
             with get_engine().connect() as conn:
                 row = conn.execute(
                     text("""
-                        SELECT v.*
-                        FROM Versions v
-                        INNER JOIN Documents d ON v.documentId = d.id
-                        WHERE v.link = :link
-                          AND d.ownerId = :uid
-                        LIMIT 1;
+                        SELECT *
+                        FROM Versions
+                        WHERE link = :link
+                        LIMIT 1
                     """),
-                    {"link": link, "uid": int(g.user["id"])},
+                    {"link": link},
                 ).first()
         except Exception as e:
             return jsonify({"error": "Failed to process DB request"}), 503
