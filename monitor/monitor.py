@@ -75,15 +75,6 @@ def _discord(title, description, color, fields, ts):
         print(f"[DISCORD ERROR] {e}", flush=True)
 
 
-def _slack(title, description, fields):
-    field_text = " | ".join(f"{k}: {v}" for k, v in fields.items())
-    try:
-        requests.post(SLACK_URL, json={
-            "text": f"*{title}*\n{description}\n{field_text}"
-        }, timeout=5)
-    except Exception as e:
-        print(f"[SLACK ERROR] {e}", flush=True)
-
 # ── Detection rules ───────────────────────────────────────────────────────────
 def _on_login_fail(rec: dict, now: float) -> None:
     ip = rec.get("ip", "unknown")
@@ -133,6 +124,35 @@ def _on_upload_reject(rec: dict, now: float) -> None:
             {"IP": ip, "Rejections": len(q), "Last reason": reason},
         )
 
+def _on_delete_document(rec: dict, now: float) -> None:
+    user = rec.get("user", "N/A")
+    user_name = rec.get("user_name", "N/A")
+    ip = rec.get("ip", "unknown")
+    doc_id = rec.get("doc_id", "N/A")
+    # Optional: alert if someone deletes a document
+    if _cooldown_ok("file_deleted: true", now):
+        _send(
+            "Document Deleted",
+            f"User `{user_name}` - `{user}` deleted document ID `{doc_id}` from `{ip}`.",
+            YELLOW,
+            {"User ID": user, "User Name": user_name, "IP": ip, "Document ID": doc_id},
+        )
+
+def _on_unauthorized_access(rec: dict, now: float) -> None:
+    status = int(rec.get("status", 0))
+    if status in (401, 403):
+        ip = rec.get("ip", "unknown")
+        q = _windows["unauthorized"][ip]
+        q.append(now)
+        _prune(q, BRUTE_WINDOW, now)
+
+        if len(q) >= 5 and _cooldown_ok(f"unauth:{ip}", now):
+            _send(
+                "Excessive Unauthorized Access",
+                f"**{len(q)} unauthorized (401/403) requests** from `{ip}` in {BRUTE_WINDOW}s",
+                ORANGE,
+                {"IP": ip, "Count": len(q), "Last Path": rec.get("path", "N/A")}
+)
 
 def _on_wm_read_fail(rec: dict, now: float) -> None:
     user = rec.get("user", "N/A")
@@ -156,8 +176,24 @@ def _on_http_access(rec: dict, now: float) -> None:
         return
     ip = rec.get("ip", "unknown")
     q  = _windows["errors"][ip]
+    path = rec.get("path", "")
     q.append(now)
     _prune(q, ERROR_WINDOW, now)
+
+    if path.startswith("/api/delete-document/") and int(rec.get("status", 0)) < 400:
+        user = rec.get("user", "N/A")
+        user_name = rec.get("user_name", "N/A")
+        ip = rec.get("ip") or rec.get("remote_addr", "unknown")
+        doc_id = path.split("/")[-1] # extracts "13" from "/api/delete-document/13"
+
+        if _cooldown_ok(f"delete_doc:{user}:{doc_id}", now):
+            _send(
+                "Document Deleted",
+                f"User `{user_name}` (ID: `{user}`) deleted document ID `{doc_id}` from `{ip}`.",
+                YELLOW,
+                {"User ID": user, "User Name": user_name, "IP": ip, "Document ID": doc_id},
+            )
+            return
 
     if len(q) >= ERROR_THRESHOLD and _cooldown_ok(f"errors:{ip}", now):
         _send(
@@ -170,12 +206,15 @@ def _on_http_access(rec: dict, now: float) -> None:
         )
 
 
+
 HANDLERS = {
     "login_fail":    _on_login_fail,
     "login_ok":      _on_login_ok,
     "upload_reject": _on_upload_reject,
     "wm_read_fail":  _on_wm_read_fail,
     "http_access":   _on_http_access,
+    "delete_doc":    _on_delete_document,
+    "unauth":        _on_unauthorized_access,
 }
 
 # File-based Log Reader

@@ -52,11 +52,15 @@ def _json_log(logger, level, msg, **extra):
 def create_app():
     app = Flask(__name__)
 
-    SECURITY_PATHS = {
-        "/api/login", "/api/upload-document", "/api/delete-document",
-        "/api/create-watermark", "/api/read-watermark",
-        "/api/rmap-initiate", "/api/rmap-get-link"
-    }
+    SECURITY_PATHS = (
+        "/api/login",
+        "/api/upload-document",
+        "/api/delete-document",
+        "/api/create-watermark",
+        "/api/read-watermark",
+        "/api/rmap-initiate",
+        "/api/rmap-get-link",
+    )
 
     @app.before_request
     def _start_timer():
@@ -80,13 +84,14 @@ def create_app():
                 return resp
 
             # only log errors OR sensitive endpoints
-            if resp.status_code < 400 and request.path not in SECURITY_PATHS:
+            if resp.status_code < 400 and not request.path.startswith(SECURITY_PATHS):
                 return resp
 
             start = getattr(g, "_t0", None)
             latency = int((time.time() - start) * 1000) if start else 0
             u = getattr(g, "user", None)
             user_id = int(u.get("id")) if isinstance(u, dict) and u.get("id") is not None else -1
+            user_name = u.get("login") if isinstance(u, dict) and u.get("login") is not None else "unknown"
 
             _json_log(
                 app.logger, logging.INFO, "http_access",
@@ -99,6 +104,7 @@ def create_app():
                 status=int(resp.status_code),
                 latency_ms=latency,
                 user=user_id,
+                user_name=user_name,
             )
         except Exception:
             pass
@@ -874,7 +880,7 @@ def create_app():
 
         _json_log(app.logger, logging.INFO, "doc_delete",
                 ts=int(time.time()), user=int(g.user["id"]), doc_id=doc_id,
-                file_deleted=file_deleted)
+                file_deleted=file_deleted, user_name=g.user["login"])
         return jsonify({
             "deleted": True,
             "id": doc_id,
