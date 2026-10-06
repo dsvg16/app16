@@ -180,6 +180,15 @@ def _on_http_access(rec: dict, now: float) -> None:
     q.append(now)
     _prune(q, ERROR_WINDOW, now)
 
+    if path.startswith("/api/rmap") and int(rec.get("status", 0)) < 400:
+        ip = rec.get("ip") or rec.get("remote_addr", "unknown")
+        _send(
+            "Rmap Accessed",
+            f"Accessed Rmap `{path}` from `{ip}`.",
+            YELLOW,
+            {"IP": ip, "Rmap Path": path},
+        )
+
     if path.startswith("/api/delete-document/") and int(rec.get("status", 0)) < 400:
         user = rec.get("user", "N/A")
         user_name = rec.get("user_name", "N/A")
