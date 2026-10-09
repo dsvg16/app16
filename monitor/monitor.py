@@ -5,12 +5,13 @@ import os
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
+from pathlib import Path
 
 # import docker
 import requests
 
 WEBHOOK_URL     = os.environ.get("DISCORD_WEBHOOK_URL", "")
-PROJECT_NAME    = os.environ.get("PROJECT_NAME", "tatou-2026")
+PROJECT_NAME    = os.environ.get("tatou-2026")
 DRY_RUN         = os.environ.get("DRY_RUN", "").lower() in ("1", "true")
 
 # Detection thresholds
@@ -21,6 +22,9 @@ UPLOAD_THRESHOLD  = int(os.environ.get("UPLOAD_THRESHOLD",  "3"))
 ERROR_WINDOW      = int(os.environ.get("ERROR_WINDOW",      "30"))
 ERROR_THRESHOLD   = int(os.environ.get("ERROR_THRESHOLD",   "10"))
 ALERT_COOLDOWN    = int(os.environ.get("ALERT_COOLDOWN",    "300"))
+
+BLOCKLIST_FILE = Path(os.environ.get("STORAGE_DIR", "/app/storage")) / "ip_blocklist.json"
+BAN_DURATION_SECONDS = 600
 
 # Discord embed colours
 RED    = 0xFF4444
@@ -40,6 +44,29 @@ def _cooldown_ok(key: str, now: float) -> bool:
         _cooldowns[key] = now
         return True
     return False
+
+def ban_ip(ip: str, duration: int = BAN_DURATION_SECONDS):
+    if not ip or ip in ("127.0.0.1", "localhost", "172.19.0.1"):
+        return
+    try:
+        data = {}
+        if BLOCKLIST_FILE.exists():
+            with open(BLOCKLIST_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+        # Clean expired entries and add new ban
+        now = time.time()
+        data = {k: v for k, v in data.items() if v > now}
+        data[ip] = now + duration
+
+        temp_file = BLOCKLIST_FILE.with_suffix(".tmp")
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        temp_file.replace(BLOCKLIST_FILE)
+        print(f"[MONITOR-CONTAINMENT] IP {ip} has been temporarily jailed for {duration}s", flush=True)
+    except Exception as e:
+        print(f"[MONITOR-CONTAINMENT ERROR] Failed to ban IP {ip}: {e}", flush=True)
+
 
 # ── Alert dispatch ────────────────────────────────────────────────────────────
 def _send(title: str, description: str, color: int, fields: dict) -> None:
@@ -84,6 +111,7 @@ def _on_login_fail(rec: dict, now: float) -> None:
     print(f"[MONITOR] login_fail ip={ip} count={len(q)}/{BRUTE_THRESHOLD}", flush=True)
 
     if len(q) >= BRUTE_THRESHOLD and _cooldown_ok(f"brute:{ip}", now):
+        ban_ip(ip)
         _send(
             "Brute Force Failed Login Detected",
             f"**{len(q)} failed logins** from `{ip}` in {BRUTE_WINDOW}s",
@@ -171,30 +199,29 @@ def _on_wm_read_fail(rec: dict, now: float) -> None:
 
 
 def _on_http_access(rec: dict, now: float) -> None:
-    """Handle http_access logs: sensitive endpoint access notifications and error storm detection."""
-    try:
-        status = int(rec.get("status", 0))
-    except (TypeError, ValueError):
-        status = 0
-
-    ip = rec.get("ip") or rec.get("remote_addr") or "unknown"
-    path = rec.get("path", "")
-
-    # 1. Sensitive Endpoint Notifications (Successful requests: status < 400)
-    if path.startswith("/api/rmap") and status < 400:
-        if _cooldown_ok(f"rmap:{ip}:{path}", now):
-            _send(
-                "Rmap Accessed",
-                f"Accessed Rmap `{path}` from `{ip}`.",
-                YELLOW,
-                {"IP": ip, "Rmap Path": path},
-            )
+    """Detect error storms — rapid 4xx/5xx from a single IP (scanning/fuzzing)."""
+    if int(rec.get("status", 0)) < 400:
         return
+    ip = rec.get("ip", "unknown")
+    q  = _windows["errors"][ip]
+    path = rec.get("path", "")
+    q.append(now)
+    _prune(q, ERROR_WINDOW, now)
 
-    if path.startswith("/api/delete-document/") and status < 400:
+    if path.startswith("/api/rmap") and int(rec.get("status", 0)) < 400:
+        ip = rec.get("ip") or rec.get("remote_addr", "unknown")
+        _send(
+            "Rmap Accessed",
+            f"Accessed Rmap `{path}` from `{ip}`.",
+            YELLOW,
+            {"IP": ip, "Rmap Path": path},
+        )
+
+    if path.startswith("/api/delete-document/") and int(rec.get("status", 0)) < 400:
         user = rec.get("user", "N/A")
         user_name = rec.get("user_name", "N/A")
-        doc_id = path.rstrip("/").split("/")[-1]
+        ip = rec.get("ip") or rec.get("remote_addr", "unknown")
+        doc_id = path.split("/")[-1] # extracts "13" from "/api/delete-document/13"
 
         if _cooldown_ok(f"delete_doc:{user}:{doc_id}", now):
             _send(
@@ -203,23 +230,17 @@ def _on_http_access(rec: dict, now: float) -> None:
                 YELLOW,
                 {"User ID": user, "User Name": user_name, "IP": ip, "Document ID": doc_id},
             )
-        return
+            return
 
-    # 2. HTTP Error Storm / Scanning Detection (status >= 400)
-    if status >= 400:
-        q = _windows["errors"][ip]
-        q.append(now)
-        _prune(q, ERROR_WINDOW, now)
-
-        if len(q) >= ERROR_THRESHOLD and _cooldown_ok(f"errors:{ip}", now):
-            _send(
-                "Possible Scanning Detected",
-                f"**{len(q)} HTTP errors** from `{ip}` in {ERROR_WINDOW}s",
-                ORANGE,
-                {"IP": ip, "Errors": len(q),
-                 "Last path": path,
-                 "Last status": status},
-            )
+    if len(q) >= ERROR_THRESHOLD and _cooldown_ok(f"errors:{ip}", now):
+        _send(
+            "Possible Scanning Detected",
+            f"**{len(q)} HTTP errors** from `{ip}` in {ERROR_WINDOW}s",
+            ORANGE,
+            {"IP": ip, "Errors": len(q),
+             "Last path": rec.get("path", "N/A"),
+             "Last status": rec.get("status", "N/A")},
+        )
 
 
 
