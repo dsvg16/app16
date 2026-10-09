@@ -230,23 +230,24 @@
     }
 
     document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      statusEl.textContent = 'Uploading…';
-      const fd = new FormData(e.currentTarget);
-      try {
-        const resp = await apiFetch('/api/upload-document', { method: 'POST', body: fd });
-        if (resp.status !== 201) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.message || resp.statusText);
-        }
-        statusEl.textContent = 'Uploaded successfully';
-        e.currentTarget.reset();
-        await loadDocuments();
-      } catch (err) {
-        // statusEl.textContent = 'Upload failed: ' + err.message;
-      } finally {
-        setTimeout(() => statusEl.textContent = '', 3000);
-      }
+             e.preventDefault();
+             const form = e.currentTarget;
+             statusEl.textContent = 'Uploading…';
+             const fd = new FormData(form);
+             try {
+               const resp = await apiFetch('/api/upload-document', { method: 'POST', body: fd });
+               if (!resp.ok) {
+                 const errData = await resp.json().catch(() => ({}));
+                 throw new Error(errData.error || resp.statusText || 'Upload failed');
+               }
+               statusEl.textContent = 'Uploaded successfully';
+               form.reset();
+               await loadDocuments();
+             } catch (err) {
+               statusEl.textContent = 'Upload failed: ' + err.message;
+             } finally {
+               setTimeout(() => statusEl.textContent = '', 3000);
+             }
     });
 
     document.getElementById('docsTable').addEventListener('click', async (e) => {
