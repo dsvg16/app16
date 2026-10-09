@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import requests
 
 WEBHOOK_URL     = os.environ.get("DISCORD_WEBHOOK_URL", "")
-PROJECT_NAME    = os.environ.get("tatou-2026")
+PROJECT_NAME    = os.environ.get("PROJECT_NAME", "tatou-2026")
 DRY_RUN         = os.environ.get("DRY_RUN", "").lower() in ("1", "true")
 
 # Detection thresholds
@@ -171,29 +171,30 @@ def _on_wm_read_fail(rec: dict, now: float) -> None:
 
 
 def _on_http_access(rec: dict, now: float) -> None:
-    """Detect error storms — rapid 4xx/5xx from a single IP (scanning/fuzzing)."""
-    if int(rec.get("status", 0)) < 400:
-        return
-    ip = rec.get("ip", "unknown")
-    q  = _windows["errors"][ip]
+    """Handle http_access logs: sensitive endpoint access notifications and error storm detection."""
+    try:
+        status = int(rec.get("status", 0))
+    except (TypeError, ValueError):
+        status = 0
+
+    ip = rec.get("ip") or rec.get("remote_addr") or "unknown"
     path = rec.get("path", "")
-    q.append(now)
-    _prune(q, ERROR_WINDOW, now)
 
-    if path.startswith("/api/rmap") and int(rec.get("status", 0)) < 400:
-        ip = rec.get("ip") or rec.get("remote_addr", "unknown")
-        _send(
-            "Rmap Accessed",
-            f"Accessed Rmap `{path}` from `{ip}`.",
-            YELLOW,
-            {"IP": ip, "Rmap Path": path},
-        )
+    # 1. Sensitive Endpoint Notifications (Successful requests: status < 400)
+    if path.startswith("/api/rmap") and status < 400:
+        if _cooldown_ok(f"rmap:{ip}:{path}", now):
+            _send(
+                "Rmap Accessed",
+                f"Accessed Rmap `{path}` from `{ip}`.",
+                YELLOW,
+                {"IP": ip, "Rmap Path": path},
+            )
+        return
 
-    if path.startswith("/api/delete-document/") and int(rec.get("status", 0)) < 400:
+    if path.startswith("/api/delete-document/") and status < 400:
         user = rec.get("user", "N/A")
         user_name = rec.get("user_name", "N/A")
-        ip = rec.get("ip") or rec.get("remote_addr", "unknown")
-        doc_id = path.split("/")[-1] # extracts "13" from "/api/delete-document/13"
+        doc_id = path.rstrip("/").split("/")[-1]
 
         if _cooldown_ok(f"delete_doc:{user}:{doc_id}", now):
             _send(
@@ -202,17 +203,23 @@ def _on_http_access(rec: dict, now: float) -> None:
                 YELLOW,
                 {"User ID": user, "User Name": user_name, "IP": ip, "Document ID": doc_id},
             )
-            return
+        return
 
-    if len(q) >= ERROR_THRESHOLD and _cooldown_ok(f"errors:{ip}", now):
-        _send(
-            "Possible Scanning Detected",
-            f"**{len(q)} HTTP errors** from `{ip}` in {ERROR_WINDOW}s",
-            ORANGE,
-            {"IP": ip, "Errors": len(q),
-             "Last path": rec.get("path", "N/A"),
-             "Last status": rec.get("status", "N/A")},
-        )
+    # 2. HTTP Error Storm / Scanning Detection (status >= 400)
+    if status >= 400:
+        q = _windows["errors"][ip]
+        q.append(now)
+        _prune(q, ERROR_WINDOW, now)
+
+        if len(q) >= ERROR_THRESHOLD and _cooldown_ok(f"errors:{ip}", now):
+            _send(
+                "Possible Scanning Detected",
+                f"**{len(q)} HTTP errors** from `{ip}` in {ERROR_WINDOW}s",
+                ORANGE,
+                {"IP": ip, "Errors": len(q),
+                 "Last path": path,
+                 "Last status": status},
+            )
 
 
 
