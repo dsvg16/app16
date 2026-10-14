@@ -19,6 +19,7 @@ Usage:
       [--key KEY | env RMAP_WM_KEY] [--try-keys wordlist.txt]
       [--storage /app/storage/rmap] [--versions versions.csv]
       [--src /app/src]
+      [--pdf-dir DIR --csv in.csv --csv-out out.csv]   fill Intended_for in a CSV
 """
 from __future__ import annotations
 
@@ -80,7 +81,10 @@ def load_versions(csv_path: Path) -> dict[str, str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("pdfs", nargs="+", type=Path)
+    ap.add_argument("pdfs", nargs="*", type=Path)
+    ap.add_argument("--pdf-dir", type=Path, help="also check every *.pdf in this directory")
+    ap.add_argument("--csv", type=Path, help="CSV with FileName,Intended_for columns to fill in")
+    ap.add_argument("--csv-out", type=Path, help="where to write the filled CSV (default: <csv>.filled.csv)")
     ap.add_argument("--key", default=os.environ.get("RMAP_WM_KEY"))
     ap.add_argument("--try-keys", type=Path, help="file with one candidate key per line")
     ap.add_argument("--storage", type=Path, help="directory of server-issued copies (STORAGE_DIR/rmap)")
@@ -89,6 +93,18 @@ def main() -> int:
     args = ap.parse_args()
 
     sys.path.insert(0, str(args.src))
+
+    pdfs = list(args.pdfs)
+    if args.pdf_dir:
+        pdfs += sorted(args.pdf_dir.glob("*.pdf"))
+    if args.csv:
+        with args.csv.open(newline="", encoding="utf-8-sig") as f:
+            wanted = [r["FileName"].strip() for r in csv.DictReader(f)]
+        have = {p.name for p in pdfs}
+        pdfs += [args.csv.parent / n for n in wanted
+                 if n not in have and (args.csv.parent / n).is_file()]
+    if not pdfs:
+        ap.error("no PDFs given (list them, or use --pdf-dir / --csv)")
 
     keys: list[str] = [args.key] if args.key else []
     if args.try_keys:
@@ -106,8 +122,13 @@ def main() -> int:
         wm = LayeredWatermark()
 
     seen_tokens: dict[str, list[str]] = {}
-    for path in args.pdfs:
-        info = inspect(path)
+    identity: dict[str, str] = {}  # file name -> recovered group
+    for path in pdfs:
+        try:
+            info = inspect(path)
+        except Exception as e:  # corrupt / not a PDF
+            print(f"\n=== {path.name}\n  unreadable ({type(e).__name__}: {e})")
+            continue
         print(f"\n=== {path.name}")
         print(f"  sha256       {info['sha256']}")
         print(f"  producer     {info['producer'] or '-'}   pages {info['pages']}")
@@ -142,6 +163,7 @@ def main() -> int:
         if link and not group and versions:
             group = versions.get(link)
         if group:
+            identity[path.name] = group
             print(f"  >>> ISSUED TO: {group}")
         elif link and versions:
             print("  >>> link not found in versions CSV")
@@ -155,6 +177,22 @@ def main() -> int:
         marked = {f for files in seen_tokens.values() for f in files}
         print(f"  {len(marked)} watermarked file(s), all with different tokens "
               "-> each went to a different group")
+
+    if args.csv:
+        out = args.csv_out or args.csv.with_suffix(".filled.csv")
+        with args.csv.open(newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            fields = reader.fieldnames or ["FileName", "Intended_for"]
+            rows = list(reader)
+        for r in rows:
+            name = r["FileName"].strip()
+            r["Intended_for"] = identity.get(name) or identity.get(name + ".pdf") or "Unknown"
+        with out.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            w.writerows(rows)
+        known = sum(r["Intended_for"] != "Unknown" for r in rows)
+        print(f"\n=== wrote {out}: {known} identified, {len(rows) - known} Unknown, {len(rows)} rows")
     return 0
 
 
