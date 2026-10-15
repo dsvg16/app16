@@ -11,7 +11,7 @@ from pathlib import Path
 import requests
 
 WEBHOOK_URL     = os.environ.get("DISCORD_WEBHOOK_URL", "")
-PROJECT_NAME    = os.environ.get("tatou-2026")
+PROJECT_NAME = os.environ.get("COMPOSE_PROJECT_NAME", "tatou-2026")
 DRY_RUN         = os.environ.get("DRY_RUN", "").lower() in ("1", "true")
 
 # Detection thresholds
@@ -203,19 +203,21 @@ def _on_http_access(rec: dict, now: float) -> None:
     if int(rec.get("status", 0)) < 400:
         return
     ip = rec.get("ip", "unknown")
-    q  = _windows["errors"][ip]
     path = rec.get("path", "")
+    status = rec.get("status", 0)
+    q = _windows["errors"][ip]
     q.append(now)
     _prune(q, ERROR_WINDOW, now)
 
-    if path.startswith("/api/rmap") and int(rec.get("status", 0)) < 400:
-        ip = rec.get("ip") or rec.get("remote_addr", "unknown")
-        _send(
-            "Rmap Accessed",
-            f"Accessed Rmap `{path}` from `{ip}`.",
-            YELLOW,
-            {"IP": ip, "Rmap Path": path},
-        )
+    if path.startswith("/api/rmap"):
+                if _cooldown_ok(f"rmap:{ip}:{path}", now):
+                    _send(
+                        "Rmap Accessed",
+                        f"Accessed Rmap `{path}` from `{ip}`.",
+                        YELLOW,
+                        {"IP": ip, "Rmap Path": path, "Status": status},
+                    )
+                return
 
     if path.startswith("/api/delete-document/") and int(rec.get("status", 0)) < 400:
         user = rec.get("user", "N/A")
@@ -250,7 +252,7 @@ HANDLERS = {
     "upload_reject": _on_upload_reject,
     "wm_read_fail":  _on_wm_read_fail,
     "http_access":   _on_http_access,
-    "delete_doc":    _on_delete_document,
+    "doc_delete":    _on_delete_document,
     "unauth":        _on_unauthorized_access,
 }
 
