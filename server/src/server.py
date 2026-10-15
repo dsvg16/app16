@@ -63,6 +63,14 @@ def create_app():
     )
 
     @app.before_request
+    def check_ip_blocklist():
+        client_ip = request.remote_addr or "unknown"
+        if _is_ip_blocked(client_ip):
+            _json_log(
+                app.logger, logging.WARNING, "blocked_ip_rejected",
+                ts=int(time.time()), ip=client_ip, path=request.path
+            )
+            return jsonify({"error": "Your IP has been temporarily banned due to suspicious activity."}), 403
     def _start_timer():
         g._t0 = time.time()
         g.request_id = str(uuid.uuid4())
@@ -156,6 +164,20 @@ def create_app():
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
 
+    BLOCKLIST_FILE = app.config["STORAGE_DIR"] / "ip_blocklist.json"
+
+    def _is_ip_blocked(ip: str) -> bool:
+        if not BLOCKLIST_FILE.exists():
+            return False
+        try:
+            with BLOCKLIST_FILE.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                expiry = data.get(ip, 0)
+                if expiry > time.time():
+                    return True
+        except Exception:
+            pass
+        return False
 
     # --- DB engine only (no Table metadata) ---
     def db_url() -> str:
