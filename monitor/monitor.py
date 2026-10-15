@@ -200,11 +200,12 @@ def _on_wm_read_fail(rec: dict, now: float) -> None:
 
 def _on_http_access(rec: dict, now: float) -> None:
     """Detect error storms — rapid 4xx/5xx from a single IP (scanning/fuzzing)."""
-    if int(rec.get("status", 0)) < 400:
-        return
+    try:
+        status = int(rec.get("status", 0))
+    except (TypeError, ValueError):
+        status = 0
     ip = rec.get("ip", "unknown")
     path = rec.get("path", "")
-    status = rec.get("status", 0)
     q = _windows["errors"][ip]
     q.append(now)
     _prune(q, ERROR_WINDOW, now)
