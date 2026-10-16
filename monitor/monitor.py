@@ -204,7 +204,11 @@ def _on_http_access(rec: dict, now: float) -> None:
         status = int(rec.get("status", 0))
     except (TypeError, ValueError):
         status = 0
+
     ip = rec.get("ip", "unknown")
+    if ip == "unknown":
+        ip = rec.get("remote_addr", "unknown")
+
     path = rec.get("path", "")
     q = _windows["errors"][ip]
     q.append(now)
